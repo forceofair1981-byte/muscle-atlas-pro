@@ -11,3 +11,21 @@
 .meal-item{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:15px 10px;border-bottom:1px solid #304862}.meal-item:last-child{border-bottom:0}.meal-item strong{display:block;color:#e7f5ff;font-size:13px}.meal-item small{color:#9fb5c8;font-size:11px}.meal-item .meal-right{display:flex;gap:10px;align-items:center}.meal-right b{font-size:16px;white-space:nowrap;color:#7ee0cb}.meal-right button{font-size:12px;padding:7px 9px}
 @media(max-width:850px){.nutrition-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:420px){.nutrition-metric{padding:12px 9px}.nutrition-metric strong{font-size:23px}.energy-split strong{font-size:24px}.nutrition-banner .section-head{align-items:flex-start}.date-inline{display:block}.date-inline input{margin-top:5px}}
+
+/* Recovery-readiness overlay; independent of stimulus heatmap */
+.recovery-panel{margin-top:16px}
+.recovery-legend{display:flex;flex-wrap:wrap;gap:12px;margin:0 0 17px;color:#c2d3e7;font-size:12px}
+.recovery-legend span{display:flex;align-items:center;gap:7px}
+.recovery-legend i{height:14px;width:14px;display:block;border-radius:4px}
+.recovery-summary{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 14px}
+.recovery-stat{background:#11273e;border:1px solid #2b4861;border-radius:12px;padding:10px 12px;flex:1;min-width:108px}
+.recovery-stat strong{display:block;font-size:23px;margin-top:4px}
+.recovery-stat small{font-size:11px;color:#9bb3ca}
+.recovery-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-top:16px}
+.recovery-entry{border:1px solid #304962;background:#0c1b2b;border-radius:11px;padding:10px 11px;display:flex;justify-content:space-between;gap:8px;align-items:center;color:#d7e6f7;font-size:12px}
+.recovery-entry small{display:block;color:#90a8c0;margin-top:4px}
+.recovery-entry b{font-size:11px;white-space:nowrap}
+.recovery-entry[data-state="ready"] b{color:#7abdfa}
+.recovery-entry[data-state="caution"] b{color:#f3c35c}
+.recovery-entry[data-state="warning"] b{color:#ff8c96}
+@media(max-width:480px){.recovery-panel .section-head{align-items:start}.recovery-legend{gap:8px;font-size:11px}.recovery-list{grid-template-columns:repeat(2,minmax(0,1fr))}}

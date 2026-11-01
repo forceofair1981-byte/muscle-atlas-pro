@@ -1,9 +1,9 @@
 import {E,names} from './catalog.js';
 import {anatomySVG} from './anatomy.js';
 import {loadStore,saveStore,clearStore,storageMode} from './db.js';
-import {GOALS,parseTraining,normalizeState,emptyState,validateProfile,safeText,localToday,uid,setsOf,tonnage,bestE1RM,energy,summary,filterPeriod,feedback,mergeMissingDays,exerciseCatalog,restingMetabolicRate,validateCaloriePlan,normalizeMeal,dayCalorieBalance} from './engine.js';
+import {GOALS,parseTraining,normalizeState,emptyState,validateProfile,safeText,localToday,uid,setsOf,tonnage,bestE1RM,energy,summary,filterPeriod,feedback,mergeMissingDays,exerciseCatalog,restingMetabolicRate,validateCaloriePlan,normalizeMeal,dayCalorieBalance,recoveryForecast} from './engine.js';
 const $=id=>document.getElementById(id),val=id=>$(id)?.value;
-let state=emptyState(),period=1,selectedMuscle=null,pending=null,editingId=null,ignoreUnmatched=new Set(),activeRoute='dashboard',noticeTimer=null;
+let state=emptyState(),period=1,selectedMuscle=null,selectedRecoveryMuscle=null,pending=null,editingId=null,ignoreUnmatched=new Set(),activeRoute='dashboard',noticeTimer=null;
 const number=x=>Number(x)||0;
 function toast(t){const el=$('toast');el.textContent=t;el.classList.add('show');clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>el.classList.remove('show'),3300)}
 const dateText=s=>s?.replaceAll('-','/');
@@ -17,10 +17,27 @@ function renderDashboard(){const logs=viewLogs(),v=summary(logs),p=state.profile
  const model=p.display==='auto'?(p.sex==='none'?'neutral':p.sex):p.display;
  $('svg-front').innerHTML=anatomySVG('front',model,v.muscles,selectedMuscle);$('svg-back').innerHTML=anatomySVG('back',model,v.muscles,selectedMuscle);
  const order=Object.entries(v.muscles).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);$('muscle-ranking').innerHTML=order.length?order.slice(0,8).map(([k,v])=>`<div class="barline"><span>${safeText(names[k])}</span><span class="bar-bg"><span class="bar-inner" style="display:block;width:${Math.min(100,v/Math.max(order[0][1],1)*100).toFixed(0)}%"></span></span><b>${v.toFixed(1)}</b></div>`).join('')+'<p class="fine">直接1.0、補助0.5のセット相当値。部位間で重複します。</p>':'<div class="empty">トレーニングを追加すると部位別の分布が表示されます。</div>';
- renderDashboardEnergy();
+ renderDashboardEnergy();renderRecovery();
  $('feedback').innerHTML=feedback(logs,p.goal).map(t=>`<p>${safeText(t)}</p>`).join('');showMuscle(logs,v.muscles);}
 function showMuscle(logs,totals){const id=selectedMuscle;if(!id){$('muscle-detail').innerHTML='<strong>部位を選択してください</strong><small>刺激セット相当と元の種目を表示します。</small>';return}
  const rows=logs.flatMap(l=>(l.exercises||[]).filter(e=>e.primary.includes(id)||e.secondary.includes(id)).map(e=>({date:l.date,name:e.displayName||e.name,sets:e.groups.reduce((v,g)=>v+g.sets,0),ratio:e.primary.includes(id)?1:.5})));$('muscle-detail').innerHTML=`<strong>${safeText(names[id])}：${number(totals[id]).toFixed(1)} セット相当</strong><small>${rows.length?rows.map(x=>`${safeText(x.date)} ${safeText(x.name)}：${x.sets}セット × ${x.ratio}`).join('<br>'):'該当記録はありません'}</small>`;}
+const recoveryPalette={ready:'#419de5',caution:'#f1c24d',warning:'#f06473'};
+function renderRecovery(){
+ const asOf=val('recovery-date')||localToday();
+ const f=recoveryForecast(state.logs,asOf,state.profile),p=state.profile;
+ const model=p.display==='auto'?(p.sex==='none'?'neutral':p.sex):p.display;
+ const colors={},titles={};
+ for(const [id,x] of Object.entries(f.items)){
+  colors[id]=recoveryPalette[x.state];
+  titles[id]=`${x.name}：${x.statusLabel}、残り休養目安 ${x.remainingDays}日${x.hasRecord?'':'（記録なし）'}`;
+ }
+ for(const side of ['front','back'])$("recovery-"+side).innerHTML=anatomySVG(side,model,{},selectedRecoveryMuscle,{colors,titles});
+ $('recovery-summary').innerHTML=[['warning','警告'],['caution','注意'],['ready','記録上は可']].map(([status,label])=>`<div class="recovery-stat"><small>${label}</small><strong style="color:${recoveryPalette[status]}">${f.counts[status]}<small>部位</small></strong></div>`).join('');
+ const active=Object.values(f.items).filter(x=>x.hasRecord).sort((a,b)=>b.remainingDays-a.remainingDays||b.lastDate.localeCompare(a.lastDate)||a.name.localeCompare(b.name));
+ $('recovery-list').innerHTML=active.length?active.map(x=>`<div class="recovery-entry" data-state="${x.state}"><span>${safeText(x.name)}<small>最終記録 ${safeText(x.lastDate)} ／ ${x.lastExposure}セット相当</small></span><b>${x.remainingDays?`残り約${x.remainingDays}日`:'記録上は可'}</b></div>`).join(''):'<div class="empty">この判定日までに部位別の筋トレ記録がありません。青は十分に回復した証拠ではありません。</div>';
+ const x=selectedRecoveryMuscle?f.items[selectedRecoveryMuscle]:null;
+ $('recovery-detail').innerHTML=x?`<strong>${safeText(x.name)}：${x.statusLabel}</strong><small>${x.hasRecord?`最終トレーニング ${x.lastDate}／${x.lastExposure}セット相当。推定休養日数 ${x.restDays}日、判定日時点で残り約${x.remainingDays}日。`:'この部位の履歴なし。青色は回復完了の保証ではありません。'}</small>`:'<strong>筋肉をタップ</strong><small>最後のトレーニングと休養目安を表示します。</small>';
+}
 function resetForm(){editingId=null;pending=null;ignoreUnmatched.clear();$('log-date').value=localToday();$('log-minutes').value='';$('log-rest').value='';$('log-intensity').value='moderate';$('log-text').value='';$('log-notes').value='';$('preview-count').textContent='未解析';$('preview-summary').textContent='入力後「入力を解析する」を押してください。';for(const id of ['preview-exercises','preview-cardio','preview-unmatched','review-alerts'])$(id).innerHTML='';$('save-session').disabled=true;$('cancel-edit').hidden=true;$('duplicate-choice').hidden=true;$('duplicate-mode').value='';}
 function analyze(){pending=parseTraining(val('log-text'));
  if(!val('log-minutes')&&pending.meta.minutes!==null)$('log-minutes').value=pending.meta.minutes;
@@ -105,7 +122,7 @@ async function deleteMeal(id){
  renderNutrition();renderDashboardEnergy();toast('食事記録を削除しました');
 }
 function renderSettings(){for(const k of ['height','weight','age','sex','fat','muscle','goal','level','display'])$('p-'+k).value=state.profile[k]??'';$('storage-message').textContent='保存方式：'+storageMode()+'。トレーニング・食事は端末ごとに保存。バックアップは暗号化されません。';}
-async function saveProfile(){const p={};for(const k of ['height','weight','age','sex','fat','muscle','goal','level','display'])p[k]=val('p-'+k);try{validateProfile(p);if(Number(state.profile.weight)!==Number(p.weight)){state.weights=state.weights||[];const d=localToday();const record={date:d,weight:Number(p.weight),savedAt:new Date().toISOString()};state.weights=state.weights.filter(x=>x.date!==d).concat(record);}state.profile=p;await save();renderDashboardEnergy();if(activeRoute==='nutrition')renderNutrition();toast('プロフィールを保存しました');}catch(e){toast(e.message)}}
+async function saveProfile(){const p={};for(const k of ['height','weight','age','sex','fat','muscle','goal','level','display'])p[k]=val('p-'+k);try{validateProfile(p);if(Number(state.profile.weight)!==Number(p.weight)){state.weights=state.weights||[];const d=localToday();const record={date:d,weight:Number(p.weight),savedAt:new Date().toISOString()};state.weights=state.weights.filter(x=>x.date!==d).concat(record);}state.profile=p;await save();renderDashboard();if(activeRoute==='nutrition')renderNutrition();toast('プロフィールを保存しました');}catch(e){toast(e.message)}}
 function download(name,content,mime){const url=URL.createObjectURL(new Blob([content],{type:mime})),a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000)}
 function exportJSON(){download('MuscleAtlasPro_Backup_'+localToday()+'.json',JSON.stringify({...state,exportedAt:new Date().toISOString(),app:'MuscleAtlasPro'},null,2),'application/json');toast('JSONバックアップを作成しました');}
 function exportCSV(){const rows=[['date','exercise','equipment','weight_kg','reps','sets','rir','strength_minutes','rest_minutes','session_id']];for(const l of [...state.logs].sort((a,b)=>a.date.localeCompare(b.date))){for(const e of l.exercises)for(const g of e.groups)rows.push([l.date,e.name,e.equipment||'',g.weight??'',g.reps,g.sets,g.rir??'',l.minutes??'',l.restMinutes??'',l.id]);}const csv='\uFEFF'+rows.map(row=>row.map(c=>'"'+String(c??'').replace(/"/g,'""')+'"').join(',')).join('\r\n');download('MuscleAtlasPro_Sets_'+localToday()+'.csv',csv,'text/csv;charset=utf-8');toast('CSVを作成しました')}
@@ -136,6 +153,12 @@ async function importJSON(file){
 }
 async function clearAll(){if(!confirm('すべての筋トレ履歴・身体プロフィールを削除します。続けますか？'))return;const word=prompt('完全削除するには「削除」と入力してください');if(word!=='削除')return;state=await clearStore();resetForm();renderSettings();$('cal-activity').value=state.caloriePlan.activityFactor;$('cal-credit').value=state.caloriePlan.exerciseCredit;$('cal-adjust').value=state.caloriePlan.goalAdjustment;renderDashboard();renderNutrition();toast('端末内のデータを削除しました');}
 function bind(){document.querySelectorAll('[data-route]').forEach(x=>x.addEventListener('click',()=>route(x.dataset.route)));document.querySelectorAll('[data-days]').forEach(x=>x.addEventListener('click',()=>{period=Number(x.dataset.days);selectedMuscle=null;document.querySelectorAll('[data-days]').forEach(y=>y.classList.toggle('active',x===y));renderDashboard()}));
+ $('recovery-date').addEventListener('change',renderRecovery);
+ $('recovery-side').addEventListener('change',()=>{const v=val('recovery-side');$('recovery-body-grid').className='body-grid'+(v==='both'?'':' single '+v)});
+ for(const id of ['recovery-front','recovery-back']){
+  $(id).addEventListener('click',e=>{const node=e.target.closest('[data-muscle]');if(!node)return;selectedRecoveryMuscle=node.dataset.muscle;renderRecovery()});
+  $(id).addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.matches('[data-muscle]')){e.preventDefault();selectedRecoveryMuscle=e.target.dataset.muscle;renderRecovery()}});
+ }
  $('map-side').addEventListener('change',()=>{const v=val('map-side');$('body-grid').className='body-grid'+(v==='both'?'':' single '+v)});
  for(const id of ['svg-front','svg-back'])$(id).addEventListener('click',e=>{const node=e.target.closest('[data-muscle]');if(!node)return;selectedMuscle=node.dataset.muscle;renderDashboard()});
  for(const id of ['svg-front','svg-back'])$(id).addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.matches('[data-muscle]')){e.preventDefault();selectedMuscle=e.target.dataset.muscle;renderDashboard()}});
@@ -148,5 +171,5 @@ function bind(){document.querySelectorAll('[data-route]').forEach(x=>x.addEventL
  $('e1rm-exercise').addEventListener('change',renderProgress);$('save-profile').addEventListener('click',saveProfile);$('export-json').addEventListener('click',exportJSON);$('export-csv').addEventListener('click',exportCSV);$('export-meals-csv').addEventListener('click',exportMealsCSV);$('import-json').addEventListener('change',e=>importJSON(e.target.files[0]));$('clear-data').addEventListener('click',clearAll);
  $('nutrition-date').addEventListener('change',renderNutrition);$('save-calorie-plan').addEventListener('click',saveCaloriePlan);$('save-meal').addEventListener('click',saveMeal);$('meal-list').addEventListener('click',e=>{const btn=e.target.closest('[data-delete-meal]');if(btn)deleteMeal(btn.dataset.deleteMeal)});
 }
-async function init(){try{({state}=await loadStore());$('storage-status').textContent=storageMode()==='indexeddb'?'● 端末内保存（外部同期なし）':'● 端末内代替保存（外部同期なし）';bind();resetForm();renderDashboard();$('nutrition-date').value=localToday();$('cal-activity').value=state.caloriePlan.activityFactor;$('cal-credit').value=state.caloriePlan.exerciseCredit;$('cal-adjust').value=state.caloriePlan.goalAdjustment;if(state.logs.length)toast(`${state.logs.length}件の記録を読み込みました`);if('serviceWorker'in navigator&&location.protocol==='https:')navigator.serviceWorker.register('./sw.js').catch(()=>{});}catch(e){$('storage-status').textContent='保存エラー';toast('起動できません：'+e.message);console.error(e)}}
+async function init(){try{({state}=await loadStore());$('recovery-date').value=localToday();$('storage-status').textContent=storageMode()==='indexeddb'?'● 端末内保存（外部同期なし）':'● 端末内代替保存（外部同期なし）';bind();resetForm();renderDashboard();$('nutrition-date').value=localToday();$('cal-activity').value=state.caloriePlan.activityFactor;$('cal-credit').value=state.caloriePlan.exerciseCredit;$('cal-adjust').value=state.caloriePlan.goalAdjustment;if(state.logs.length)toast(`${state.logs.length}件の記録を読み込みました`);if('serviceWorker'in navigator&&location.protocol==='https:')navigator.serviceWorker.register('./sw.js').catch(()=>{});}catch(e){$('storage-status').textContent='保存エラー';toast('起動できません：'+e.message);console.error(e)}}
 init();

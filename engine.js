@@ -1,8 +1,8 @@
 import {E, names} from './catalog.js';
 
-export const VERSION=3;
+export const VERSION=4;
 export const GOALS={balanced:'筋肥大＋減量',hypertrophy:'筋肥大',strength:'筋力向上',fatloss:'減量',proportion:'プロポーション改善（体型改善）'};
-export const defaultProfile=()=>({age:'',height:'',weight:'',fat:'',muscle:'',sex:'none',display:'auto',goal:'balanced',level:'advanced'});
+export const defaultProfile=()=>({age:'30',height:'165',weight:'60',fat:'',muscle:'',sex:'none',display:'auto',goal:'balanced',level:'advanced'});
 export const defaultCaloriePlan=()=>({activityFactor:1.2,goalAdjustment:-250,exerciseCredit:0.5});
 export const emptyState=()=>({schemaVersion:VERSION,profile:defaultProfile(),logs:[],weights:[],meals:[],caloriePlan:defaultCaloriePlan(),updatedAt:new Date().toISOString()});
 const alias=E.flatMap(e=>e.a.map(a=>({e,a:a.normalize('NFKC').toLowerCase()}))).sort((a,b)=>b.a.length-a.a.length);
@@ -183,4 +183,54 @@ export function dayCalorieBalance(state,date){
  const maintenance=baseline===null?null:baseline+exerciseAddition;
  const target=maintenance===null?null:maintenance+plan.goalAdjustment;
  return {bmr,baseline,netEx,grossEx,exerciseAddition,maintenance,target,intake,hasMeals:consumed.length>0,mealCount:consumed.length,remaining:target===null||!consumed.length?null:target-intake,macros,plan,partial:anyUnknown};
+}
+
+
+/** RECOVERY READINESS ESTIMATE (not a physiological measurement)
+ * Muscle-specific calendar-day screening based on per-day exposure, direct vs indirect sets,
+ * intensity, and set RIR where available. No fixed waiting period establishes clinical readiness.
+ * Model version recovery-cal-days-v1; see documentation for assumptions.
+ */
+export const recoveryModelVersion='recovery-cal-days-v1';
+export function estimateRestDays(effectiveSets,{nearFailure=false,vigorous=false,level='intermediate'}={}){
+ if(!(Number(effectiveSets)>0))return 0;
+ let days= effectiveSets<=2?1:effectiveSets<=5?2:effectiveSets<=9?3:4;
+ if(nearFailure)days+=1;
+ if(vigorous&&effectiveSets>2)days+=1;
+ if(level==='beginner'&&effectiveSets>3)days+=1;
+ return Math.min(5,days);
+}
+const diffCalendarDays=(a,b)=>Math.round((Date.parse(a+'T12:00:00Z')-Date.parse(b+'T12:00:00Z'))/86400000);
+export function recoveryForecast(logs,asOf=localToday(),profile={}){
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(asOf)||!Number.isFinite(Date.parse(asOf+'T12:00:00Z')))throw Error('回復表示日が正しくありません');
+ const grouped=new Map();
+ for(const log of (logs||[])){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(log.date||'')||log.date>asOf)continue;
+  if(diffCalendarDays(asOf,log.date)>15)continue;
+  let day=grouped.get(log.date);if(!day){day=new Map();grouped.set(log.date,day)}
+  for(const ex of log.exercises||[]){
+   const sets=(ex.groups||[]).reduce((sum,g)=>sum+(Number(g.sets)||0),0);
+   if(!(sets>0))continue;
+   const nearFailure=(ex.groups||[]).some(g=>g.rir!==null&&g.rir!==undefined&&Number(g.rir)<=1);
+   const p=new Set(ex.primary||[]),secondary=new Set(ex.secondary||[]);
+   for(const id of p){if(!(id in names))continue;const info=day.get(id)||{sets:0,nearFailure:false,vigorous:false};info.sets+=sets;info.nearFailure ||=nearFailure;info.vigorous ||=log.intensity==='vigorous';day.set(id,info)}
+   for(const id of secondary){if(!(id in names)||p.has(id))continue;const info=day.get(id)||{sets:0,nearFailure:false,vigorous:false};info.sets+=sets*.5;info.nearFailure ||=nearFailure;info.vigorous ||=log.intensity==='vigorous';day.set(id,info)}
+  }
+ }
+ const items={};
+ for(const id of Object.keys(names)){
+  const exposures=[...grouped.entries()].filter(([,parts])=>parts.has(id)).map(([date,parts])=>{
+   const data=parts.get(id),requiredDays=estimateRestDays(data.sets,{nearFailure:data.nearFailure,vigorous:data.vigorous,level:profile.level});
+   const elapsedDays=diffCalendarDays(asOf,date);
+   return {date,effectiveSets:Math.round(data.sets*10)/10,requiredDays,elapsedDays,remainingDays:Math.max(0,requiredDays-elapsedDays)};
+  }).sort((a,b)=>b.date.localeCompare(a.date));
+  const remainingDays=Math.max(0,...exposures.map(x=>x.remainingDays));
+  const last=exposures[0]||null;
+  const state=remainingDays>=2?'warning':remainingDays===1?'caution':'ready';
+  const statusLabel=state==='warning'?'トレーニング警告':state==='caution'?'トレーニング注意':'トレーニング可';
+  // A blue state means no estimated residual load *in recorded sessions*, not medical clearance.
+  items[id]={id,name:names[id],state,statusLabel,remainingDays,lastDate:last?.date||null,lastExposure:last?.effectiveSets||0,restDays:last?.requiredDays||0,hasRecord:!!last};
+ }
+ const counts={ready:0,caution:0,warning:0};Object.values(items).forEach(x=>counts[x.state]++);
+ return {asOf,modelVersion:recoveryModelVersion,items,counts,observedTrainingDays:grouped.size};
 }
