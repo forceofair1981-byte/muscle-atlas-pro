@@ -2,7 +2,7 @@ import {normalizeVital,validatePFCGoal} from './wellness.js';
 import {pfcForPreset,matchPfcPreset} from './presets.js';
 import {E, names} from './catalog.js';
 
-export const VERSION=7;
+export const VERSION=9;
 export const GOALS={balanced:'筋肥大＋減量',hypertrophy:'筋肥大',strength:'筋力向上',fatloss:'減量',proportion:'プロポーション改善（体型改善）'};
 export const defaultProfile=()=>({age:'30',height:'165',weight:'60',fat:'',muscle:'',sex:'none',display:'auto',goal:'balanced',level:'advanced'});
 export const defaultCaloriePlan=()=>({activityFactor:1.2,goalAdjustment:-250,exerciseCredit:0.5});
@@ -123,11 +123,30 @@ export function tonnage(log){return round((log?.exercises||[]).reduce((a,e)=>a+(
 export function bestE1RM(log,exerciseName){const vals=(log?.exercises||[]).filter(e=>!exerciseName||e.name===exerciseName).flatMap(e=>e.groups||[]).filter(g=>g.weight>0&&g.reps>0&&g.reps<=10).map(g=>g.weight*(1+g.reps/30));return vals.length?round(Math.max(...vals),10):null;}
 export function stimulus(logs){const result={};for(const l of logs){for(const ex of l.exercises||[]){const sets=ex.groups?.reduce((v,g)=>v+nSafe(g.sets),0)||0;for(const id of ex.primary||[])result[id]=(result[id]||0)+sets;for(const id of ex.secondary||[])result[id]=(result[id]||0)+sets*.5;}}return result;}
 // Gross and net estimates follow 1 MET = 3.5 ml O2/kg/min; 1L O2 ~ 5kcal.
-export function energy(log){const wt=Number(log.weightSnapshot);const strength=Number(log.minutes)||0;const out={gross:null,net:null,low:null,high:null,cardioGross:null,partial:false,assumptions:[]};if(!(wt>0))return out;
- let total=0,net=0,lo=0,hi=0,known=false;
- if(strength>0){const met={light:3,moderate:3.5,vigorous:6}[log.intensity]||3.5;const m=1.05*wt*strength/60;total+=m*met;net+=m*(met-1);lo+=m*3.5;hi+=m*6;known=true;out.assumptions.push('筋トレの強度による概算（休憩込み）');}
- let cgross=0;for(const c of log.cardio||[]){if(!(c.minutes>0)||!(c.met>0)){out.partial=true;continue}const v=1.05*wt*c.minutes/60;total+=v*c.met;net+=v*(c.met-1);lo+=v*c.met;hi+=v*c.met;cgross+=v*c.met;known=true;if(c.name==='トレッドミル')out.assumptions.push('トレッドミルはACSM歩行式の近似。手すり使用などは未補正');}
- if(known){out.gross=Math.round(total);out.net=Math.round(net);out.low=Math.round(lo);out.high=Math.round(hi);out.cardioGross=Math.round(cgross);}return out;
+export function energy(log){
+ const wt=Number(log.weightSnapshot),strength=Number(log.minutes)||0;
+ const out={gross:null,net:null,low:null,high:null,strengthGross:null,strengthNet:null,cardioGross:null,cardioNet:null,partial:false,assumptions:[]};
+ if(!(wt>0))return out;
+ let total=0,net=0,lo=0,hi=0,known=false,sgross=0,snet=0,cgross=0,cnet=0;
+ if(strength>0){
+  const met={light:3,moderate:3.5,vigorous:6}[log.intensity]||3.5;
+  const m=1.05*wt*strength/60;
+  sgross=m*met;snet=m*(met-1);total+=sgross;net+=snet;lo+=m*3.5;hi+=m*6;known=true;
+  out.assumptions.push('筋トレの強度による概算（休憩込み）');
+ }else if((log.exercises||[]).length){out.partial=true;out.assumptions.push('筋トレ時間未入力のため筋トレ消費を計上できません');}
+ for(const c of log.cardio||[]){
+  if(!(c.minutes>0)||!(c.met>0)){out.partial=true;continue}
+  const m=1.05*wt*c.minutes/60;
+  const g=m*c.met,n=m*(c.met-1);
+  total+=g;net+=n;lo+=g;hi+=g;cgross+=g;cnet+=n;known=true;
+  if(c.name==='トレッドミル')out.assumptions.push('トレッドミルはACSM歩行式の近似。手すり使用などは未補正');
+ }
+ if(known){
+  out.gross=Math.round(total);out.net=Math.round(net);out.low=Math.round(lo);out.high=Math.round(hi);
+  out.strengthGross=Math.round(sgross);out.strengthNet=Math.round(snet);
+  out.cardioGross=Math.round(cgross);out.cardioNet=Math.round(cnet);
+ }
+ return out;
 }
 export function summary(logs){const all=(logs||[]),totals=stimulus(all),kcal=all.map(energy);return {sessions:all.length,sets:all.reduce((v,l)=>v+setsOf(l),0),tonnage:all.reduce((v,l)=>v+tonnage(l),0),totalEnergy:kcal.some(x=>x.gross!==null)?kcal.reduce((v,x)=>v+(x.gross||0),0):null,partial:kcal.some(x=>x.partial),muscles:totals};}
 export function filterPeriod(logs,days,asOf=localToday()){const to=new Date(asOf+'T12:00:00'),from=new Date(to);from.setDate(from.getDate()-days+1);const start=localToday(from);return logs.filter(l=>l.date>=start&&l.date<=asOf);}
@@ -175,28 +194,36 @@ export function normalizeMeal(m){
   macros[key]=v;
  }
  const mealType=['breakfast','lunch','dinner','snack'].includes(m.mealType)?m.mealType:'snack';
- return {id:String(m.id||uid()).slice(0,120),date,name,kcal:Math.round(kcal),...macros,mealType,notes:String(m.notes||'').slice(0,500),inputMode:['ingredients','dish','product','manual'].includes(m.inputMode)?m.inputMode:'manual',estimated:!!m.estimated,rawText:String(m.rawText||'').slice(0,4000),createdAt:m.createdAt||new Date().toISOString()};
+ return {id:String(m.id||uid()).slice(0,120),date,name,kcal:Math.round(kcal),...macros,mealType,notes:String(m.notes||'').slice(0,500),inputMode:['ingredients','dish','product','manual'].includes(m.inputMode)?m.inputMode:'manual',estimated:!!m.estimated,rawText:String(m.rawText||'').slice(0,4000),foodItems:Array.isArray(m.foodItems)?m.foodItems.slice(0,120).map(x=>({label:String(x.label||'').slice(0,300),food:x.food||null,grams:x.grams==null?null:Number(x.grams),source:['reference','label','manual','unknown'].includes(x.source)?x.source:'unknown',excluded:!!x.excluded,confidence:String(x.confidence||'').slice(0,30),nutrients:Object.fromEntries(['kcal','protein','fat','carbs'].map(k=>[k,x.nutrients?.[k]==null?null:Number(x.nutrients[k])]))})):[],foodParserVersion:Number(m.foodParserVersion)||null,createdAt:m.createdAt||new Date().toISOString()};
 }
 export function dayCalorieBalance(state,date){
  const bmr=restingMetabolicRate(state.profile);
  const plan=validateCaloriePlan({...defaultCaloriePlan(),...(state.caloriePlan||{})});
  const sessions=(state.logs||[]).filter(l=>l.date===date);
  const spent=sessions.map(energy);
+ // Sessions with unknown duration/weight remain flagged as partial; never silently counted as 0 kcal.
+ const knownSessions=spent.filter(x=>x.net!==null);
  const netEx=spent.reduce((sum,x)=>sum+(x.net??0),0);
  const grossEx=spent.reduce((sum,x)=>sum+(x.gross??0),0);
+ const strengthNet=spent.reduce((sum,x)=>sum+(x.strengthNet??0),0);
+ const cardioNet=spent.reduce((sum,x)=>sum+(x.cardioNet??0),0);
+ const strengthGross=spent.reduce((sum,x)=>sum+(x.strengthGross??0),0);
+ const cardioGross=spent.reduce((sum,x)=>sum+(x.cardioGross??0),0);
  const anyUnknown=spent.some(x=>x.partial||(x.net===null));
  const consumed=(state.meals||[]).filter(m=>m.date===date);
  const intake=consumed.reduce((sum,m)=>sum+m.kcal,0);
  const macros=Object.fromEntries(['protein','fat','carbs'].map(key=>[key,consumed.some(m=>m[key]!==null)?Math.round(consumed.reduce((sum,m)=>sum+(m[key]||0),0)*10)/10:null]));
  const baseline=bmr===null?null:Math.round(bmr*plan.activityFactor);
- // The multiplier describes ordinary days EXCLUDING the separately logged structured workouts.
- // Exercise NET above 1 MET (not gross) avoids adding resting expenditure twice.
+ // Always compute exercise independently of BMR. Missing sex must not hide logged exercise calories.
+ // The food target credits only a configurable share of NET kcal to reduce false precision.
  const exerciseAddition=Math.round(netEx*plan.exerciseCredit);
  const maintenance=baseline===null?null:baseline+exerciseAddition;
  const target=maintenance===null?null:maintenance+plan.goalAdjustment;
- return {bmr,baseline,netEx,grossEx,exerciseAddition,maintenance,target,intake,hasMeals:consumed.length>0,mealCount:consumed.length,remaining:target===null||!consumed.length?null:target-intake,macros,plan,partial:anyUnknown};
+ return {bmr,baseline,netEx,grossEx,strengthNet,cardioNet,strengthGross,cardioGross,
+  hasExerciseRecords:sessions.length>0,knownExerciseSessions:knownSessions.length,exerciseSessions:sessions.length,
+  exerciseAddition,maintenance,target,intake,hasMeals:consumed.length>0,mealCount:consumed.length,
+  remaining:target===null||!consumed.length?null:target-intake,macros,plan,partial:anyUnknown};
 }
-
 
 /** RECOVERY READINESS ESTIMATE (not a physiological measurement)
  * Muscle-specific calendar-day screening based on per-day exposure, direct vs indirect sets,

@@ -1,4 +1,4 @@
-import {parseFoodLines,parseLabel,dailyPFC,validatePFCGoal,parseBPText,normalizeVital} from './wellness.js';
+import {FOOD_REFERENCE,parseFoodLines,parseLabel,calculateFoodTotals,dailyPFC,validatePFCGoal,parseBPText,normalizeVital} from './wellness.js';
 import {E,names} from './catalog.js';
 import {PFC_PRESETS,pfcForPreset,matchPfcPreset,pfcGramTargets} from './presets.js';
 import {recommendForMuscle} from './recommend.js';
@@ -115,16 +115,27 @@ async function saveForecastPlan(){
 function energyFormat(n){return n===null?'—':Math.round(n).toLocaleString('ja-JP')}
 function renderDashboardEnergy(){
  const d=dayCalorieBalance(state,localToday()),el=$('dashboard-energy-summary');
- if(d.bmr===null){el.textContent='身長・体重・年齢・性別を設定すると、基礎代謝と食事目標を推定できます。';return;}
- el.innerHTML=`推定基礎代謝 <b>${energyFormat(d.bmr)}kcal</b> / 日 · 食事目標 <b>${energyFormat(d.target)}kcal</b> · 摂取 ${d.hasMeals?'<b>'+energyFormat(d.intake)+'kcal</b>（記録分）':'未記録'}<p class="fine">今日の筋トレによる追加消費は ${energyFormat(d.exerciseAddition)}kcal（調整後）。安静時消費の二重計上を防いだ参考推定値です。</p>`;
+ const exerciseText=d.hasExerciseRecords?(d.knownExerciseSessions?`${energyFormat(d.netEx)}kcal（推定追加消費）`:'未算出（運動時間・体重を確認）'):'今日の運動記録なし';
+ if(d.bmr===null){
+  el.innerHTML=`<strong>運動記録：</strong>${exerciseText}<p class="fine">推定基礎代謝と食事目標の表示には、プロフィールの身長・体重・年齢・性別を設定してください。運動消費は別途集計されています。</p>`;return;
+ }
+ el.innerHTML=`推定基礎代謝 <b>${energyFormat(d.bmr)}kcal</b> / 日 · 食事目標 <b>${energyFormat(d.target)}kcal</b> · 摂取 ${d.hasMeals?'<b>'+energyFormat(d.intake)+'kcal</b>（記録分）':'未記録'}<p class="fine">今日の運動による推定追加消費は ${exerciseText}、摂取目標に反映する量は ${energyFormat(d.exerciseAddition)}kcal（${Math.round(d.plan.exerciseCredit*100)}%）。</p>`;
 }
 const mealLabels={breakfast:'朝食',lunch:'昼食',dinner:'夕食',snack:'間食'};
 function renderNutrition(){
  const dt=val('nutrition-date')||localToday(),d=dayCalorieBalance(state,dt);
- for(const [id,v] of [['nutr-bmr',d.bmr],['nutr-baseline',d.baseline],['nutr-extra',d.bmr===null?null:d.exerciseAddition],['nutr-target',d.target],['nutr-intake',d.hasMeals?d.intake:null],['nutr-remaining',d.remaining]])$(id).textContent=energyFormat(v);
+ const exerciseKnown=d.knownExerciseSessions>0,exerciseText=exerciseKnown?d.netEx:(d.hasExerciseRecords?null:0);
+ const creditedText=exerciseKnown?d.exerciseAddition:(d.hasExerciseRecords?null:0);
+ for(const [id,v] of [['nutr-bmr',d.bmr],['nutr-baseline',d.baseline],['nutr-extra',exerciseText],['nutr-credited',creditedText],['nutr-target',d.target],['nutr-intake',d.hasMeals?d.intake:null],['nutr-remaining',d.remaining]])$(id).textContent=energyFormat(v);
+ const dateOptions=[...new Set(state.logs.map(x=>x.date))].sort((a,b)=>b.localeCompare(a));
+ const nav=$('nutrition-workout-day');if(nav){nav.innerHTML='<option value="">記録日を選択</option>'+dateOptions.map(x=>`<option value="${safeText(x)}">${safeText(dateText(x))}</option>`).join('');nav.value=dateOptions.includes(dt)?dt:'';}
+ const breakdown=$('nutr-exercise-breakdown');
+ if(d.hasExerciseRecords){
+  breakdown.innerHTML=`<div><small>選択日の筋トレ（推定追加消費）</small><strong>${exerciseKnown?energyFormat(d.strengthNet):'—'} kcal</strong></div><div><small>選択日の有酸素（推定追加消費）</small><strong>${exerciseKnown?energyFormat(d.cardioNet):'—'} kcal</strong></div><div><small>運動総消費（安静時分を含む）</small><strong>${exerciseKnown?energyFormat(d.grossEx):'—'} kcal</strong></div><p class="fine">実際の運動追加消費は推定${energyFormat(exerciseText)}kcal（100％）。食事目標にはその${Math.round(d.plan.exerciseCredit*100)}％、${energyFormat(creditedText)}kcalを反映。筋トレと有酸素の追加消費は安静時相当を除外しており、二重計上を避けています。</p>`;
+ }else breakdown.innerHTML='<p class="fine">選択日にトレーニング記録はありません。上の「トレーニング記録がある日へ移動」で記録日を選択できます。</p>';
  $('nutr-progress').style.width=d.target>0&&d.hasMeals?Math.min(100,d.intake/d.target*100).toFixed(1)+'%':'0%';
  const notices=[];
- if(d.bmr===null)notices.push('基礎代謝の計算には19〜78歳の年齢・身長・体重と男性／女性の式の選択が必要です。性別未回答時は計算しません。');
+ if(d.bmr===null)notices.push('基礎代謝の計算には19〜78歳の年齢・身長・体重と男性／女性の式の選択が必要です。基礎代謝未確定でも、運動消費は独立して表示します。');
  else notices.push(`計算内訳：RMR ${energyFormat(d.bmr)} × 活動係数 ${d.plan.activityFactor} ＋ 運動の安静時超過分 ${energyFormat(d.netEx)} × 反映率 ${Math.round(d.plan.exerciseCredit*100)}% ＋ 目標調整 ${d.plan.goalAdjustment>0?'+':''}${d.plan.goalAdjustment}kcal。`);
  if(!d.hasMeals)notices.push('食事未記録：摂取量と残りカロリーを表示しません。');
  else notices.push('残りは「記録済みの食事」に対する数値です。食事の入力漏れがある場合は実際の収支ではありません。');
@@ -227,30 +238,83 @@ async function choosePFCPreset(){const key=val('pfc-preset');if(!(key in PFC_PRE
  const old=state.pfcGoal,oldPreset=state.pfcPreset;state.pfcGoal=pfcForPreset(key);state.pfcPreset=key;
  try{await save();renderNutrition();toast(`${PFC_PRESETS[key].label}のPFC目標を保存しました`)}catch(e){state.pfcGoal=old;state.pfcPreset=oldPreset;renderNutrition();toast('PFCの保存に失敗しました：'+e.message)}
 }
-function getFoodResult(){const mode=val('food-mode'),raw=val('food-lines');const result=mode==='product'?{...parseFoodLines(raw,mode),label:parseLabel(raw)}:parseFoodLines(raw,mode);
- const totals=mode==='product'&&result.label.found?result.label:result.totals;
- return {...result,totals};}
-function analyzeFood(){lastParsedFood=getFoodResult();const v=lastParsedFood;
- const lines=v.items.map(item=>`<div class="food-analyzed-row">${item.recognized?'✓ ':'? '}${safeText(item.label)}<small>${item.source==='reference'?'食品参考値による概算':item.source==='label'?'入力された栄養表示':'栄養値不明'}</small></div>`).join('');
- $('food-preview').innerHTML=`${lines||'入力がありません。'}${v.unknown.length?`<p>未認識：${safeText(v.unknown.join(' / '))}</p>`:''}<p>${v.estimated?'一部の食品に概算値を使用。':'ラベルや完成品は実値の確認が必要です。'} 分量や調理方法で変わります。</p>`;
- for(const [k,id] of [['kcal','food-kcal'],['protein','food-protein'],['fat','food-fat'],['carbs','food-carbs']])$(id).value=v.totals[k]===null||v.totals[k]===undefined?'':v.totals[k];
- if(v.mode==='product'&&v.label?.found)$('food-preview').textContent+=' ラベル解析：'+v.label.warning;
- return v;
+let lastParsedRaw='';
+function renderFoodCatalogSearch(){
+ const term=(val('food-catalog-search')||'').normalize('NFKC').toLowerCase().trim();
+ const result=$('food-catalog-results');if(!result)return;
+ if(!term){result.textContent=`端末内の食品辞書 ${FOOD_REFERENCE.length}品目から検索できます。`;return}
+ const found=FOOD_REFERENCE.filter(f=>[f.name,...f.aliases].some(a=>a.normalize('NFKC').toLowerCase().includes(term))).slice(0,18);
+ result.innerHTML=found.length?found.map(f=>`<button type="button" class="food-search-pick" data-pick-food="${safeText(f.name)}"><strong>${safeText(f.name)}</strong><small>${f.requiresLabel?'栄養表示・レシピ要確認':f.referenceStatus==='approximate-unverified'?'参考値・要確認':'参考値'} · ${safeText(f.group||'食品')}</small></button>`).join(''):'候補がありません。栄養成分表示を使って登録できます。';
+}
+function getFoodResult(){return parseFoodLines(val('food-lines'),val('food-mode'));}
+const formatFoodNum=v=>v===null||v===undefined?'':String(v);
+function refreshFoodReview(){
+ if(!lastParsedFood)return;
+ const sum=calculateFoodTotals(lastParsedFood.items);
+ Object.assign(lastParsedFood,sum);
+ for(const [key,id] of [['kcal','food-kcal'],['protein','food-protein'],['fat','food-fat'],['carbs','food-carbs']])$(id).value=formatFoodNum(sum.totals[key]);
+ const active=lastParsedFood.items.filter(x=>!x.excluded);
+ $('food-review-totals').textContent=`集計 ${active.length}品：${sum.totals.kcal===null?'未確定':sum.totals.kcal+'kcal'} / P ${formatFoodNum(sum.totals.protein)||'未確定'}g / F ${formatFoodNum(sum.totals.fat)||'未確定'}g / C ${formatFoodNum(sum.totals.carbs)||'未確定'}g`;
+ $('food-review-warning').textContent=sum.unknown.length?`${sum.unknown.length}品のカロリー未確定。数値を入力するか、その品だけ明示的に除外してください。`:
+  (active.length?'すべての行のカロリーを計上できます。PFCが空欄の場合は部分集計になります。':'計上対象の食品がありません。');
+}
+function renderFoodReview(){
+ const v=lastParsedFood;
+ const lines=v.items.map((item,i)=>{
+ const badge=item.source==='reference'?'参考値':item.source==='label'?'ラベル入力':'未認識';
+ const conf=item.confidence==='要確認'?'low':item.confidence==='参考'?'warn':'';
+ const warn=[item.reason,...(item.warnings||[])].filter(Boolean).join(' ');
+ return `<div class="food-review-item"><div class="food-review-head"><div><strong>${safeText(item.label)}</strong><small>${safeText(item.food||badge)}${item.grams?` · 約${item.grams}g`:''}</small></div><span class="food-confidence ${conf}">${safeText(item.confidence)} / ${badge}</span></div><div class="food-review-grid">${[['kcal','kcal'],['protein','P g'],['fat','F g'],['carbs','C g']].map(([k,l])=>`<label>${l}<input type="number" min="0" max="15000" step="0.1" data-food-idx="${i}" data-food-key="${k}" value="${formatFoodNum(item.nutrients?.[k])}" placeholder="未確認" ${item.excluded?'disabled':''}></label>`).join('')}</div><label class="food-exclude"><input type="checkbox" data-food-exclude="${i}" ${item.excluded?'checked':''}>この行を計上対象から除外する</label>${warn?`<p class="food-review-note">${safeText(warn)}</p>`:''}</div>`;
+ }).join('');
+ $('food-preview').innerHTML=`<p class="food-review-help">1品ずつ数値を確認・修正してください。「?」の食品は不明です。包装表示の100g当たりは食べた量への換算が必要です。調理前と調理後の重量にも注意してください。</p>${lines||'<p>入力がありません。</p>'}<div id="food-review-totals" class="food-totals"></div><p id="food-review-warning" class="food-review-note" role="status"></p>`;
+ refreshFoodReview();
+}
+function analyzeFood(){lastParsedFood=getFoodResult();lastParsedRaw=val('food-lines').trim();renderFoodReview();return lastParsedFood;}
+function editFoodRow(e){
+ if(!lastParsedFood)return;
+ const el=e.target;
+ if(el.dataset.foodExclude!==undefined){const idx=Number(el.dataset.foodExclude);const item=lastParsedFood.items[idx];if(!item)return;item.excluded=!!el.checked;
+  for(const inp of $('food-preview').querySelectorAll(`[data-food-idx="${idx}"]`))inp.disabled=item.excluded;
+ }else if(el.dataset.foodIdx!==undefined){const idx=Number(el.dataset.foodIdx),key=el.dataset.foodKey,item=lastParsedFood.items[idx];
+  if(!item||!['kcal','protein','fat','carbs'].includes(key))return;
+  const value=el.value.trim();if(value!==''&&(!Number.isFinite(Number(value))||Number(value)<0||Number(value)>15000)){el.setCustomValidity('0以上の有効な数値を入力してください');el.reportValidity();return;}el.setCustomValidity('');
+  item.nutrients??={kcal:null,protein:null,fat:null,carbs:null};item.nutrients[key]=value===''?null:Number(value);
+  item.recognized=item.nutrients.kcal!==null;
+  item.source='manual';item.confidence='手動確認';
+ }else return;
+ refreshFoodReview();
 }
 async function saveFood(){
- try{const raw=val('food-lines').trim();const name=val('food-name').trim()||raw.split(/\n/)[0]?.replace(/^[・•\-*\s]+/,'').slice(0,180);if(!raw)throw Error('箇条書きの食事内容を入力してください');
- const kcal=val('food-kcal');if(kcal==='')throw Error('カロリーを確認し、入力してください。未知の料理は推測しません。');
- const row=normalizeMeal({id:uid(),date:val('nutrition-date')||localToday(),mealType:val('food-meal-type'),name,kcal,protein:val('food-protein'),fat:val('food-fat'),carbs:val('food-carbs'),rawText:raw,inputMode:val('food-mode'),estimated:!!lastParsedFood?.estimated});
- // Repeated snack entries are explicitly supported: each click is a separate intake.
- const old=state.meals;state.meals=[...state.meals,row];try{await save()}catch(e){state.meals=old;throw e}
- $('food-lines').value='';$('food-name').value='';for(const id of ['food-kcal','food-protein','food-fat','food-carbs'])$(id).value='';lastParsedFood=null;$('food-preview').textContent='保存しました。次の食事・間食を続けて入力できます。';renderNutrition();renderDashboardEnergy();toast('食事を追加しました。同日の間食は累積されます。');
+ try{
+  const raw=val('food-lines').trim(),name=val('food-name').trim()||raw.split(/\n/)[0]?.replace(/^[・•\-*\s]+/,'').slice(0,180);
+  if(!raw)throw Error('箇条書きで食品を入力してください。');
+  if(!lastParsedFood||lastParsedRaw!==raw)throw Error('入力が変わりました。「内容を解析」を押してから保存してください。');
+  const sum=calculateFoodTotals(lastParsedFood.items);
+  if(!sum.count)throw Error('記録する食品がありません。');
+  if(!sum.allKnown)throw Error('未認識の食品があります。行ごとに栄養値を修正するか、除外してください。');
+  const keys=['kcal','protein','fat','carbs'];
+  if(keys.some(k=>{let text=val('food-'+k).trim(),expected=sum.totals[k];return text!==formatFoodNum(expected)}))throw Error('合計が個別明細と異なります。各行の数値を修正してください。');
+  const row=normalizeMeal({id:uid(),date:val('nutrition-date')||localToday(),mealType:val('food-meal-type'),name,kcal:sum.totals.kcal,protein:sum.totals.protein,fat:sum.totals.fat,carbs:sum.totals.carbs,rawText:raw,inputMode:val('food-mode'),estimated:sum.estimated,foodItems:lastParsedFood.items,foodParserVersion:2});
+  const old=state.meals;state.meals=[...state.meals,row];try{await save()}catch(e){state.meals=old;throw e}
+  $('food-lines').value='';$('food-name').value='';for(const id of ['food-kcal','food-protein','food-fat','food-carbs'])$(id).value='';lastParsedFood=null;lastParsedRaw='';$('food-preview').textContent='保存しました。次の食事・間食を続けて入力できます。';renderNutrition();renderDashboardEnergy();toast('食事を追加しました。品目別の確認値も端末内に保存しました。');
  }catch(e){toast(e.message)}
 }
 function choosePhoto(e,kind){const file=e.target.files?.[0];const target=kind==='food'?'food-photo-preview':'vital-photo-preview';if(previewPhotoURL[kind])URL.revokeObjectURL(previewPhotoURL[kind]);previewPhotoURL[kind]=null;if(!file)return;if(!file.type.startsWith('image/')){toast('画像ファイルを指定してください');return}if(file.size>12*1024*1024){toast('12MB以下の画像にしてください');return}previewPhotoURL[kind]=URL.createObjectURL(file);const image=document.createElement('img');image.src=previewPhotoURL[kind];image.alt='選択した写真の端末内プレビュー';$(target).replaceChildren(image);$(kind==='food'?'food-photo-status':'vital-photo-status').textContent='写真を選択しました。写真はアプリの保存データに含みません。OCRに対応しない端末は写真の文字をコピーして入力してください。'}
 async function tryPhotoOCR(kind){const pick=kind==='food'?'food-photo':'vital-photo',target=kind==='food'?'food-label-text':'vital-photo-text',status=kind==='food'?'food-photo-status':'vital-photo-status';if(!$(pick).files?.[0])return toast('写真を先に選択してください');if(typeof window.TextDetector!=='function'){$(status).textContent='このブラウザでは端末内OCRが利用できません。iPhoneの「写真」で画像を開き、「テキスト認識表示」でコピーして下の欄へ貼り付けてください。写真は送信しません。';return}
  try{const img=new Image();img.src=previewPhotoURL[kind];await img.decode();const results=await new window.TextDetector().detect(img);$(target).value=results.map(x=>x.rawValue).join('\n');$(status).textContent='端末内で文字を抽出しました。保存前に数値を照合してください。';}catch(e){$(status).textContent='文字認識に失敗しました。写真アプリの「テキスト認識表示」でコピーしてください。';}
 }
-function applyFoodLabel(){const result=parseLabel(val('food-label-text'));for(const [k,id] of [['kcal','food-kcal'],['protein','food-protein'],['fat','food-fat'],['carbs','food-carbs']])if(result[k]!==null)$(id).value=result[k];$('food-photo-status').textContent=result.warning+' 商品ラベルが「100gあたり」「1袋あたり」のどちらか確認し、記録する摂取量に合わせて修正してください。';if(result.found){$('food-mode').value='product';if(!val('food-lines'))$('food-lines').value=val('food-label-text');}}
+function applyFoodLabel(){
+ const text=val('food-label-text').trim();if(!text)return toast('栄養成分表示の文字を入力してください。');
+ const amt=val('food-label-amount'),unit=val('food-label-unit');
+ const result=parseLabel(text,amt===''?{}:{amount:Number(amt),unit});
+ const status=$('food-photo-status');status.textContent=result.warning;
+ if(result.needsPortion||!result.found)return;
+ $('food-mode').value='product';
+ const raw='商品ラベル: '+text.replace(/[\r\n]+/g,' ').slice(0,3900);
+ $('food-lines').value=raw;
+ lastParsedFood={mode:'product',items:[{label:raw,recognized:result.kcal!==null,source:'label',food:null,grams:result.consumed?.unit==='g'?result.consumed.value:null,estimate:false,confidence:result.basis==='unknown'?'要確認':'高',reason:result.basis==='unknown'?'表示が何当たりの数値か確認してください。':'',warnings:result.warnings,nutrients:Object.fromEntries(['kcal','protein','fat','carbs'].map(k=>[k,result[k]])),excluded:false}],unknown:[],estimated:false};
+ lastParsedRaw=raw;renderFoodReview();
+}
 function applyVitalText(){const result=parseBPText(val('vital-photo-text'));for(const [k,id] of [['systolic','vital-sys'],['diastolic','vital-dia'],['pulse','vital-pulse']])if(result[k]!==null)$(id).value=result[k];$('vital-photo-status').textContent=`${result.recognized}項目を抽出しました。必ず測定器の数字と照合してから保存してください。`;}
 function renderVitals(){const sorted=[...(state.vitals||[])].sort((a,b)=>(a.date+' '+a.time).localeCompare(b.date+' '+b.time));$('vital-count').textContent=sorted.length+'件';
  const recent=sorted.slice(-20),bp=recent.filter(x=>x.systolic!==null&&x.diastolic!==null),pulse=recent.filter(x=>x.pulse!==null);
@@ -280,10 +344,13 @@ function bind(){document.querySelectorAll('[data-route]').forEach(x=>x.addEventL
  $('preview-unmatched').addEventListener('change',e=>{if(e.target.dataset.ignore===undefined)return;const id=Number(e.target.dataset.ignore);if(e.target.checked)ignoreUnmatched.add(id);else ignoreUnmatched.delete(id)});
  $('history-query').addEventListener('input',renderHistory);$('history-list').addEventListener('click',e=>{const t=e.target.closest('button');if(!t)return;if(t.dataset.edit)editLog(t.dataset.edit);else if(t.dataset.delete)deleteLog(t.dataset.delete)});
  $('e1rm-exercise').addEventListener('change',renderProgress);$('forecast-calc').addEventListener('click',renderForecast);$('forecast-mode').addEventListener('change',renderForecast);$('forecast-exercise').addEventListener('change',renderForecast);$('forecast-save').addEventListener('click',saveForecastPlan);$('save-profile').addEventListener('click',saveProfile);$('export-json').addEventListener('click',exportJSON);$('export-csv').addEventListener('click',exportCSV);$('export-meals-csv').addEventListener('click',exportMealsCSV);$('import-json').addEventListener('change',e=>importJSON(e.target.files[0]));$('clear-data').addEventListener('click',clearAll);
- $('food-mode').addEventListener('change',()=>{lastParsedFood=null;$('food-preview').textContent='形式を変更しました。解析を実行してください。'});
- $('food-analyze').addEventListener('click',analyzeFood);$('food-save').addEventListener('click',saveFood);$('food-photo').addEventListener('change',e=>choosePhoto(e,'food'));$('food-photo-read').addEventListener('click',()=>tryPhotoOCR('food'));$('food-label-analyze').addEventListener('click',applyFoodLabel);$('save-pfc-target').addEventListener('click',savePFCGoal);$('pfc-preset').addEventListener('change',choosePFCPreset);
+ $('food-catalog-search').addEventListener('input',renderFoodCatalogSearch);
+ $('food-catalog-results').addEventListener('click',e=>{const btn=e.target.closest('[data-pick-food]');if(!btn)return;const name=btn.dataset.pickFood;const inp=$('food-lines');inp.value+=(inp.value.trim()?'\n':'')+'・'+name+' 100g';lastParsedFood=null;lastParsedRaw='';$('food-preview').textContent='食品を追加しました。分量を修正し、解析を実行してください。';inp.focus()});
+ renderFoodCatalogSearch();
+ $('food-mode').addEventListener('change',()=>{lastParsedFood=null;lastParsedRaw='';$('food-preview').textContent='形式を変更しました。解析を実行してください。'});
+ $('food-analyze').addEventListener('click',analyzeFood);$('food-preview').addEventListener('input',editFoodRow);$('food-preview').addEventListener('change',editFoodRow);$('food-save').addEventListener('click',saveFood);$('food-photo').addEventListener('change',e=>choosePhoto(e,'food'));$('food-photo-read').addEventListener('click',()=>tryPhotoOCR('food'));$('food-label-analyze').addEventListener('click',applyFoodLabel);$('save-pfc-target').addEventListener('click',savePFCGoal);$('pfc-preset').addEventListener('change',choosePFCPreset);
  $('vital-date').value=localToday();$('vital-time').value=new Date().toTimeString().slice(0,5);$('save-vital').addEventListener('click',saveVital);$('vital-photo').addEventListener('change',e=>choosePhoto(e,'vital'));$('vital-photo-read').addEventListener('click',()=>tryPhotoOCR('vital'));$('vital-text-apply').addEventListener('click',applyVitalText);$('vital-list').addEventListener('click',e=>{const t=e.target.closest('[data-delete-vital]');if(t)deleteVital(t.dataset.deleteVital)});$('export-vitals-csv').addEventListener('click',exportVitalsCSV);
- $('nutrition-date').addEventListener('change',renderNutrition);$('save-calorie-plan').addEventListener('click',saveCaloriePlan);$('save-meal').addEventListener('click',saveMeal);$('meal-list').addEventListener('click',e=>{const btn=e.target.closest('[data-delete-meal]');if(btn)deleteMeal(btn.dataset.deleteMeal)});
+ $('nutrition-date').addEventListener('change',renderNutrition);$('nutrition-workout-day').addEventListener('change',e=>{if(e.target.value){$('nutrition-date').value=e.target.value;renderNutrition()}});$('nutrition-today').addEventListener('click',()=>{$('nutrition-date').value=localToday();renderNutrition()});$('save-calorie-plan').addEventListener('click',saveCaloriePlan);$('save-meal').addEventListener('click',saveMeal);$('meal-list').addEventListener('click',e=>{const btn=e.target.closest('[data-delete-meal]');if(btn)deleteMeal(btn.dataset.deleteMeal)});
 }
 async function init(){try{({state}=await loadStore());$('recovery-date').value=localToday();$('storage-status').textContent=storageMode()==='indexeddb'?'● 端末内保存（外部同期なし）':'● 端末内代替保存（外部同期なし）';bind();resetForm();setForecastControls();renderDashboard();$('nutrition-date').value=localToday();$('cal-activity').value=state.caloriePlan.activityFactor;$('cal-credit').value=state.caloriePlan.exerciseCredit;$('cal-adjust').value=state.caloriePlan.goalAdjustment;if(state.logs.length)toast(`${state.logs.length}件の記録を読み込みました`);if('serviceWorker'in navigator&&location.protocol==='https:')navigator.serviceWorker.register('./sw.js').catch(()=>{});}catch(e){$('storage-status').textContent='保存エラー';toast('起動できません：'+e.message);console.error(e)}}
 init();
