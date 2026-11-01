@@ -1,0 +1,186 @@
+import {E, names} from './catalog.js';
+
+export const VERSION=3;
+export const GOALS={balanced:'筋肥大＋減量',hypertrophy:'筋肥大',strength:'筋力向上',fatloss:'減量',proportion:'プロポーション改善（体型改善）'};
+export const defaultProfile=()=>({age:'',height:'',weight:'',fat:'',muscle:'',sex:'none',display:'auto',goal:'balanced',level:'advanced'});
+export const defaultCaloriePlan=()=>({activityFactor:1.2,goalAdjustment:-250,exerciseCredit:0.5});
+export const emptyState=()=>({schemaVersion:VERSION,profile:defaultProfile(),logs:[],weights:[],meals:[],caloriePlan:defaultCaloriePlan(),updatedAt:new Date().toISOString()});
+const alias=E.flatMap(e=>e.a.map(a=>({e,a:a.normalize('NFKC').toLowerCase()}))).sort((a,b)=>b.a.length-a.a.length);
+const cardioCatalog=[{name:'トレッドミル',alias:['トレッドミル','treadmill'],met:null},{name:'エアロバイク',alias:['エアロバイク','stationary bike','フィットネスバイク'],met:5.8},{name:'ウォーキング',alias:['ウォーキング','walking','早歩き'],met:3.5},{name:'ランニング',alias:['ランニング','running','ジョギング'],met:7},{name:'ローイングマシン',alias:['ローイングマシン'],met:5.0},{name:'有酸素運動',alias:['有酸素運動','cardio'],met:5.0}];
+export const exerciseCatalog=E.map(x=>({name:x.n,primary:x.p,secondary:x.s}));
+export const safeText=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+export const localToday=(d=new Date())=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+export const uid=()=>globalThis.crypto?.randomUUID?.() || 'ma-'+Date.now()+'-'+Math.random().toString(36).slice(2,12);
+const n=x=>Number(x);
+const clean=s=>String(s||'').normalize('NFKC').toLowerCase();
+const round=(v,k=1)=>Math.round(v*k)/k;
+export const parseTraining=(text)=>{
+ const lines=String(text||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+ const chunks=[],meta={minutes:null,restMinutes:null},warnings=[];
+ for(let i=0;i<lines.length;i++){
+  const raw=lines[i],norm=clean(raw);
+  if(/^(?:\d{1,4}\s*[年/.\-]\s*)?\d{1,2}\s*[月/.\-]\s*\d{1,2}日?\s*の?\s*(?:トレーニング|筋トレ|胸|肩|脚|背中)/.test(norm)||/^\d{1,2}\/\d{1,2}のトレーニング/.test(norm))continue;
+  const time=norm.match(/^(?:筋トレ|トレーニング|ウエイト|ウェイト)(?:の)?(?:所要)?時間\s*[:：]?\s*(\d+(?:\.\d+)?)\s*(時間|分)/);
+  if(time){meta.minutes=round(Number(time[1])*(time[2]==='時間'?60:1),10);continue}
+  const rest=norm.match(/^(?:セット間(?:休憩)?|インターバル)\s*[:：]?\s*(\d+(?:\.\d+)?)\s*(時間|分|秒)/);
+  if(rest){meta.restMinutes=round(Number(rest[1])*(rest[2]==='時間'?60:rest[2]==='秒'?1/60:1),100);continue}
+  const match=alias.find(x=>norm.includes(x.a))||cardioCatalog.find(c=>c.alias.some(a=>norm.includes(a)));
+  const nxt=lines[i+1]||'';
+  if(match&&/^\d+(?:\.\d+)?/.test(clean(nxt))&&/(?:kg|キロ|rep|回|set|セット|km|分|傾斜|度|%)/i.test(clean(nxt))){chunks.push(raw+' '+nxt);i++}else chunks.push(raw);
+ }
+ const exercises=[],cardio=[],unmatched=[];
+ for(const raw of chunks){
+  const line=clean(raw).replace(/^[・•*\-]+\s*/,'').replace(/^\d+[.、)]\s*/,'');
+  const ca=cardioCatalog.find(c=>c.alias.some(a=>line.includes(a)));
+  if(ca){
+   const mt=line.match(/(\d+(?:\.\d+)?)\s*分/),ht=line.match(/(\d+(?:\.\d+)?)\s*時間/),km=line.match(/(\d+(?:\.\d+)?)\s*km(?!\s*\/\s*h)/i),speed=line.match(/(\d+(?:\.\d+)?)\s*km\s*\/\s*h/i),incl=line.match(/(\d+(?:\.\d+)?)\s*(%|度)\s*(?:傾斜)?/);
+   let minutes=mt?n(mt[1]):ht?60*n(ht[1]):null;
+   const distanceKm=km?n(km[1]):null,speedKmh=speed?n(speed[1]):null,grade=incl?n(incl[1]):null,gradeUnit=incl?(incl[2]==='度'?'degrees':'percent'):null;
+   if(minutes===null&&distanceKm!==null&&speedKmh>0)minutes=round(distanceKm/speedKmh*60,10);
+   let met=ca.met;
+   if(ca.name==='トレッドミル'&&speedKmh>0&&gradeUnit!=='degrees'){
+    const v=speedKmh*1000/60;
+    met=round((.1*v+1.8*v*(gradeUnit==='percent'?grade/100:0)+3.5)/3.5,10000);
+   }
+   const needsReview=!(minutes>0)||!(met>0)||gradeUnit==='degrees'||(ca.name==='トレッドミル'&&speedKmh===null);
+   if(minutes===null&&distanceKm===null){unmatched.push({raw,reason:'有酸素の時間または距離が必要です'});continue}
+   if(needsReview)warnings.push(`「${ca.name}」は時間・速度・勾配の単位を確認してください。未確定分は消費量に含めません。`);
+   cardio.push({id:uid(),name:ca.name,minutes:minutes??null,speedKmh,distanceKm,grade,gradeUnit,met:needsReview?null:met,needsReview,raw});continue;
+  }
+  const e=alias.find(x=>line.includes(x.a))?.e;
+  if(!e){unmatched.push({raw,reason:'種目名を識別できません'});continue}
+  const wt=[...line.matchAll(/(\d+(?:\.\d+)?)\s*(?:kg|キロ)/gi)];
+  const portions=wt.length?wt.map((w,i)=>({weight:n(w[1]),text:line.slice(w.index+w[0].length,i+1<wt.length?wt[i+1].index:line.length)})):[{weight:null,text:line}];
+  const groups=[];
+  for(const part of portions){
+   let matched=false;
+   for(const v of part.text.matchAll(/(\d+)\s*(?:reps?|回)(?:\s*[x×*]?\s*(\d+)\s*(?:sets?|セット))?/gi)){
+    groups.push({weight:part.weight,reps:n(v[1]),sets:v[2]?n(v[2]):1,impliedSet:!v[2],rir:null});matched=true;
+   }
+   if(!matched){const z=part.text.match(/(\d+)\s*[x×*]\s*(\d+)\s*(?:sets?|セット)?/i);if(z)groups.push({weight:part.weight,reps:n(z[1]),sets:n(z[2]),impliedSet:false,rir:null})}
+  }
+  if(!groups.length||groups.some(g=>g.reps<1||g.reps>200||g.sets<1||g.sets>50||g.weight!==null&&(g.weight<0||g.weight>2000))){unmatched.push({raw,reason:'セット形式または値が不正です'});continue}
+  const equipment=/ダンベル|dumbbell|db\s/.test(line)?'dumbbell':/バーベル|barbell/.test(line)?'barbell':null;
+  const rir=(line.match(/rir\s*[:：]?\s*(\d+)/)||[])[1];
+  if(rir!==undefined)groups.forEach(g=>g.rir=n(rir));
+  const displayName=raw.replace(/\s*\d+(?:\.\d+)?\s*(?:kg|キロ).*$/i,'').trim();
+  exercises.push({id:uid(),name:e.n,displayName,primary:[...e.p],secondary:[...e.s],equipment,groups,raw});
+ }
+ if(!exercises.length&&!cardio.length)warnings.push('認識できる記録がありません。');
+ if(unmatched.length)warnings.push(`未認識の行が${unmatched.length}件あります。内容を修正するか、明示的に除外してください。`);
+ return {exercises,cardio,meta,unmatched,warnings};
+};
+
+export const normalizeSession=(s)=>{
+ const date=/^\d{4}-\d{2}-\d{2}$/.test(s?.date||'')?s.date:localToday();
+ const ex=(s?.exercises||[]).map(e=>{
+  const match=E.find(c=>c.n===e.name),groups=(e.groups||e.workSets||[{weight:e.weight,reps:e.reps,sets:e.sets}]).map(g=>({weight:g.weight==null?null:n(g.weight),reps:n(g.reps),sets:n(g.sets),rir:g.rir==null?null:n(g.rir),impliedSet:!!g.impliedSet}));
+  return {id:e.id||uid(),name:e.name||'未登録種目',displayName:e.displayName||e.name||'未登録種目',primary:[...(match?.p||e.primary||[])].filter(x=>x in names),secondary:[...(match?.s||e.secondary||[])].filter(x=>x in names),equipment:e.equipment||null,groups,raw:e.raw||''};
+ }).filter(e=>e.groups.length&&e.groups.every(g=>g.sets>=1&&g.reps>=1&&g.sets<=50&&g.reps<=200&&(g.weight===null||g.weight>=0&&g.weight<=2000)));
+ const cardio=(s?.cardio||[]).map(c=>({...c,id:c.id||uid(),minutes:c.minutes==null?null:n(c.minutes),met:c.met==null?null:n(c.met)})).filter(c=>c.minutes===null||c.minutes>0&&c.minutes<1440);
+ return {id:String(s?.id||uid()),date,minutes:s?.minutes==null?null:n(s.minutes),restMinutes:s?.restMinutes==null?null:n(s.restMinutes),intensity:['moderate','light','vigorous'].includes(s?.intensity)?s.intensity:'moderate',weightSnapshot:s?.weightSnapshot==null?null:n(s.weightSnapshot),raw:String(s?.raw||''),exercises:ex,cardio,notes:String(s?.notes||'').slice(0,3000),createdAt:s?.createdAt||new Date().toISOString(),updatedAt:s?.updatedAt||new Date().toISOString()};
+};
+export const normalizeState=(data)=>{
+ if(!data||typeof data!=='object'||!Array.isArray(data.logs)||typeof data.profile!=='object'||!data.profile)throw Error('バックアップの形式が正しくありません。');
+ if(data.logs.length>20000)throw Error('記録件数が多すぎます。');
+ const logs=data.logs.map(normalizeSession), ids=new Set();for(const l of logs){if(ids.has(l.id))l.id=uid();ids.add(l.id)}
+ const meals=Array.isArray(data.meals)?data.meals.slice(-30000).map(normalizeMeal):[];
+ const mealIds=new Set();for(const meal of meals){if(mealIds.has(meal.id))meal.id=uid();mealIds.add(meal.id)}
+ const plan=validateCaloriePlan({...defaultCaloriePlan(),...(data.caloriePlan||{})});
+ return {schemaVersion:VERSION,profile:{...defaultProfile(),...Object.fromEntries(Object.entries(data.profile).filter(([k])=>k in defaultProfile()))},logs,weights:Array.isArray(data.weights)?data.weights.slice(-30000):[],meals,caloriePlan:plan,updatedAt:new Date().toISOString()};
+};
+/** Merge backups from prior builds without repeating any date already recorded on this device.
+ * Existing profile and records take priority; preserve multi-session days from incoming when the date is new.
+ */
+export function mergeMissingDays(current,incoming){
+ const base=normalizeState(current),addition=normalizeState(incoming);
+ const existingDates=new Set(base.logs.map(l=>l.date));
+ const fresh=addition.logs.filter(l=>!existingDates.has(l.date));
+ const existingIds=new Set(base.logs.map(l=>l.id));
+ for(const l of fresh){if(existingIds.has(l.id))l.id=uid();existingIds.add(l.id)}
+ const profileIsSet=Number(base.profile.weight)>0&&Number(base.profile.height)>0;
+ const weightKeys=new Set(base.weights.map(w=>w.date));
+ const mealKeys=new Set(base.meals.map(m=>m.id));
+ const freshMeals=addition.meals.filter(m=>!mealKeys.has(m.id));
+ return {state:normalizeState({...base,logs:[...base.logs,...fresh],profile:profileIsSet?base.profile:addition.profile,weights:[...base.weights,...addition.weights.filter(w=>!weightKeys.has(w.date))],meals:[...base.meals,...freshMeals],caloriePlan:base.caloriePlan}),added:fresh.length,skipped: addition.logs.length-fresh.length,mealsAdded:freshMeals.length};
+}
+export function validateProfile(p){const h=Number(p.height),w=Number(p.weight),age=Number(p.age);if(!Number.isFinite(h)||h<90||h>240)throw Error('身長は90〜240cmで入力してください');if(!Number.isFinite(w)||w<25||w>350)throw Error('体重は25〜350kgで入力してください');if(p.age!==''&&(!Number.isInteger(age)||age<1||age>120))throw Error('年齢を確認してください');if(p.fat!==''&&(n(p.fat)<1||n(p.fat)>70))throw Error('体脂肪率を確認してください');return true;}
+export function setsOf(log){return (log?.exercises||[]).reduce((a,e)=>a+(e.groups||[]).reduce((n,g)=>n+nSafe(g.sets),0),0)}
+const nSafe=x=>Number.isFinite(Number(x))?Number(x):0;
+export function tonnage(log){return round((log?.exercises||[]).reduce((a,e)=>a+(e.groups||[]).reduce((v,g)=>v+(nSafe(g.weight)*nSafe(g.reps)*nSafe(g.sets)),0),0));}
+export function bestE1RM(log,exerciseName){const vals=(log?.exercises||[]).filter(e=>!exerciseName||e.name===exerciseName).flatMap(e=>e.groups||[]).filter(g=>g.weight>0&&g.reps>0&&g.reps<=10).map(g=>g.weight*(1+g.reps/30));return vals.length?round(Math.max(...vals),10):null;}
+export function stimulus(logs){const result={};for(const l of logs){for(const ex of l.exercises||[]){const sets=ex.groups?.reduce((v,g)=>v+nSafe(g.sets),0)||0;for(const id of ex.primary||[])result[id]=(result[id]||0)+sets;for(const id of ex.secondary||[])result[id]=(result[id]||0)+sets*.5;}}return result;}
+// Gross and net estimates follow 1 MET = 3.5 ml O2/kg/min; 1L O2 ~ 5kcal.
+export function energy(log){const wt=Number(log.weightSnapshot);const strength=Number(log.minutes)||0;const out={gross:null,net:null,low:null,high:null,cardioGross:null,partial:false,assumptions:[]};if(!(wt>0))return out;
+ let total=0,net=0,lo=0,hi=0,known=false;
+ if(strength>0){const met={light:3,moderate:3.5,vigorous:6}[log.intensity]||3.5;const m=1.05*wt*strength/60;total+=m*met;net+=m*(met-1);lo+=m*3.5;hi+=m*6;known=true;out.assumptions.push('筋トレの強度による概算（休憩込み）');}
+ let cgross=0;for(const c of log.cardio||[]){if(!(c.minutes>0)||!(c.met>0)){out.partial=true;continue}const v=1.05*wt*c.minutes/60;total+=v*c.met;net+=v*(c.met-1);lo+=v*c.met;hi+=v*c.met;cgross+=v*c.met;known=true;if(c.name==='トレッドミル')out.assumptions.push('トレッドミルはACSM歩行式の近似。手すり使用などは未補正');}
+ if(known){out.gross=Math.round(total);out.net=Math.round(net);out.low=Math.round(lo);out.high=Math.round(hi);out.cardioGross=Math.round(cgross);}return out;
+}
+export function summary(logs){const all=(logs||[]),totals=stimulus(all),kcal=all.map(energy);return {sessions:all.length,sets:all.reduce((v,l)=>v+setsOf(l),0),tonnage:all.reduce((v,l)=>v+tonnage(l),0),totalEnergy:kcal.some(x=>x.gross!==null)?kcal.reduce((v,x)=>v+(x.gross||0),0):null,partial:kcal.some(x=>x.partial),muscles:totals};}
+export function filterPeriod(logs,days,asOf=localToday()){const to=new Date(asOf+'T12:00:00'),from=new Date(to);from.setDate(from.getDate()-days+1);const start=localToday(from);return logs.filter(l=>l.date>=start&&l.date<=asOf);}
+export function feedback(logs,goal='balanced'){const v=summary(logs),rank=Object.entries(v.muscles).sort((a,b)=>b[1]-a[1]);const notes=[];
+ if(!logs.length)return ['記録を追加すると、筋肉への推定刺激と週間トレンドが表示されます。'];
+ if(rank.length)notes.push(`直近の最多刺激部位は${names[rank[0][0]]}（${round(rank[0][1],10)}セット相当）です。`);
+ const shoulder=Number(v.muscles.delt_front)||0,triceps=Number(v.muscles.triceps)||0;
+ if(shoulder>=15&&triceps>=9)notes.push('プレス系の累積負荷が高めです。肩・肘の違和感、RIR、パフォーマンスの低下がないか確認してください。');
+ if(goal==='proportion'){
+  // Appearance goals are evaluated only as training coverage, never as guaranteed body-shape outcomes.
+  const targets=[['chest','胸'],['lats','背中'],['delt_side','肩中部'],['delt_rear','肩後部'],['quads','脚前部'],['hamstrings','脚後部'],['glutes','臀部']];
+  const missing=targets.filter(([key])=>!v.muscles[key]).map(([,name])=>name);
+  notes.push(missing.length?`体型改善の観点では部位の偏りも確認しましょう。この表示期間に記録のない部位：${missing.join('・')}。予定している分割法も考慮してください。`:'体型改善目標：主要部位に記録があります。セット数・姿勢・体重等の推移を継続して確認してください。');
+  notes.push('ヒートマップは筋肉への推定刺激で、見た目の変化や体脂肪分布は評価できません。');
+ }
+ const major=['chest','lats','quads','hamstrings','glutes'];const absent=major.filter(x=>!v.muscles[x]);if(absent.length)notes.push('この期間に記録のない大筋群があります。予定した分割法と休養日を含めて確認してください。');
+ if(v.partial)notes.push('一部有酸素運動は速度または時間が不明なため、カロリーに含まれていません。');
+ notes.push('セット相当数は種目辞書からのモデル推定であり、筋活動や成長を実測した値ではありません。');return notes;
+}
+
+// ENERGY CONTROL v2.2: all estimates are informational, never measured metabolic expenditure.
+// Mifflin-St Jeor RMR for adults; sex unspecified does not imply a default coefficient.
+export function restingMetabolicRate(profile){
+ const w=Number(profile?.weight),h=Number(profile?.height),a=Number(profile?.age);
+ if(!(w>0&&h>0&&Number.isInteger(a)&&a>=19&&a<=78))return null;
+ if(!['male','female'].includes(profile?.sex))return null;
+ return Math.round(10*w+6.25*h-5*a+(profile.sex==='male'?5:-161));
+}
+export function validateCaloriePlan(p){
+ const activityFactor=Number(p.activityFactor),goalAdjustment=Number(p.goalAdjustment),exerciseCredit=Number(p.exerciseCredit);
+ if(![1.2,1.35,1.5,1.7].includes(activityFactor))throw Error('日常活動係数の選択が正しくありません。');
+ if(!Number.isFinite(goalAdjustment)||goalAdjustment< -500||goalAdjustment>500)throw Error('目標調整量は−500〜＋500kcalにしてください。');
+ if(![0,0.5,1].includes(exerciseCredit))throw Error('運動消費の反映率を選択してください。');
+ return {activityFactor,goalAdjustment,exerciseCredit};
+}
+export function normalizeMeal(m){
+ if(!m||typeof m!=='object')throw Error('食事記録が不正です。');
+ const date=String(m.date||'');if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(Date.parse(date+'T12:00:00')))throw Error('食事記録の日付が不正です。');
+ const name=String(m.name||'').trim().slice(0,180);
+ const kcal=Number(m.kcal);
+ if(!name||!Number.isFinite(kcal)||kcal<0||kcal>15000)throw Error('食事名・カロリーを確認してください。');
+ const macros={};for(const key of ['protein','fat','carbs']){
+  const v=m[key]==null||m[key]===''?null:Number(m[key]);
+  if(v!==null&&(!Number.isFinite(v)||v<0||v>1000))throw Error('三大栄養素の値を確認してください。');
+  macros[key]=v;
+ }
+ const mealType=['breakfast','lunch','dinner','snack'].includes(m.mealType)?m.mealType:'snack';
+ return {id:String(m.id||uid()).slice(0,120),date,name,kcal:Math.round(kcal),...macros,mealType,notes:String(m.notes||'').slice(0,500),createdAt:m.createdAt||new Date().toISOString()};
+}
+export function dayCalorieBalance(state,date){
+ const bmr=restingMetabolicRate(state.profile);
+ const plan=validateCaloriePlan({...defaultCaloriePlan(),...(state.caloriePlan||{})});
+ const sessions=(state.logs||[]).filter(l=>l.date===date);
+ const spent=sessions.map(energy);
+ const netEx=spent.reduce((sum,x)=>sum+(x.net??0),0);
+ const grossEx=spent.reduce((sum,x)=>sum+(x.gross??0),0);
+ const anyUnknown=spent.some(x=>x.partial||(x.net===null));
+ const consumed=(state.meals||[]).filter(m=>m.date===date);
+ const intake=consumed.reduce((sum,m)=>sum+m.kcal,0);
+ const macros=Object.fromEntries(['protein','fat','carbs'].map(key=>[key,consumed.some(m=>m[key]!==null)?Math.round(consumed.reduce((sum,m)=>sum+(m[key]||0),0)*10)/10:null]));
+ const baseline=bmr===null?null:Math.round(bmr*plan.activityFactor);
+ // The multiplier describes ordinary days EXCLUDING the separately logged structured workouts.
+ // Exercise NET above 1 MET (not gross) avoids adding resting expenditure twice.
+ const exerciseAddition=Math.round(netEx*plan.exerciseCredit);
+ const maintenance=baseline===null?null:baseline+exerciseAddition;
+ const target=maintenance===null?null:maintenance+plan.goalAdjustment;
+ return {bmr,baseline,netEx,grossEx,exerciseAddition,maintenance,target,intake,hasMeals:consumed.length>0,mealCount:consumed.length,remaining:target===null||!consumed.length?null:target-intake,macros,plan,partial:anyUnknown};
+}
