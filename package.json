@@ -1,1 +1,1 @@
-{"name":"muscle-atlas-pro","version":"3.1.0","private":true,"type":"module","scripts":{"test":"node --test ../tests/*.test.mjs"}}
+{"name":"muscle-atlas-pro","version":"3.2.0","private":true,"type":"module","scripts":{"test":"node --test ../tests/*.test.mjs"}}

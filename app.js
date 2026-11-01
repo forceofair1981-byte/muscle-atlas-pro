@@ -8,6 +8,7 @@ import {displayNames,DETAIL_IDS,baseOf,displayValue,visibleRegionCount,SELECTABL
 import {planTomorrow,TRAINABLE_GROUPS} from './tomorrow.js';
 import {forecastScenario,normalizeForecastSettings} from './forecast.js';
 import {loadStore,saveStore,clearStore,storageMode} from './db.js';
+import {filterMeals,groupMeals,updateMealById} from './meal_history.js';
 import {GOALS,parseTraining,normalizeState,emptyState,validateProfile,safeText,localToday,uid,setsOf,tonnage,bestE1RM,energy,summary,filterPeriod,feedback,mergeMissingDays,exerciseCatalog,restingMetabolicRate,validateCaloriePlan,normalizeMeal,dayCalorieBalance,recoveryForecast} from './engine.js';
 const $=id=>document.getElementById(id),val=id=>$(id)?.value;
 let state=emptyState(),period=1,selectedMuscle=null,selectedRecoveryMuscle=null,pending=null,editingId=null,ignoreUnmatched=new Set(),activeRoute='dashboard',noticeTimer=null;
@@ -165,6 +166,7 @@ function renderDashboardEnergy(){
  el.innerHTML=`推定基礎代謝 <b>${energyFormat(d.bmr)}kcal</b> / 日 · 食事目標 <b>${energyFormat(d.target)}kcal</b> · 摂取 ${d.hasMeals?'<b>'+energyFormat(d.intake)+'kcal</b>（記録分）':'未記録'}<p class="fine">今日の運動による推定追加消費は ${exerciseText}、摂取目標に反映する量は ${energyFormat(d.exerciseAddition)}kcal（${Math.round(d.plan.exerciseCredit*100)}%）。</p>`;
 }
 const mealLabels={breakfast:'朝食',lunch:'昼食',dinner:'夕食',snack:'間食'};
+let editingMealId=null;
 function renderNutrition(){
  const dt=val('nutrition-date')||localToday(),d=dayCalorieBalance(state,dt);
  const exerciseKnown=d.knownExerciseSessions>0,exerciseText=exerciseKnown?d.netEx:(d.hasExerciseRecords?null:0);
@@ -189,7 +191,65 @@ function renderNutrition(){
  const meals=state.meals.filter(m=>m.date===dt);
  $('meal-count').textContent=meals.length+'件';
  renderDailyPFC(dt);
- $('meal-list').innerHTML=meals.length?meals.map(m=>`<div class="meal-item"><div><strong>${safeText(m.name)}</strong><small>${mealLabels[m.mealType]||'食事'}${m.protein!==null?' · P '+m.protein+'g':''}${m.fat!==null?' · F '+m.fat+'g':''}${m.carbs!==null?' · C '+m.carbs+'g':''}</small></div><div class="meal-right"><b>${energyFormat(m.kcal)} kcal</b><button class="btn danger" data-delete-meal="${safeText(m.id)}" aria-label="食事記録を削除">削除</button></div></div>`).join(''):'<div class="empty">この日の食事はまだ登録されていません。</div>';
+ $('meal-list').innerHTML=meals.length?meals.map(m=>`<div class="meal-item"><div><strong>${safeText(m.name)}</strong><small>${mealLabels[m.mealType]||'食事'}${m.protein!==null?' · P '+m.protein+'g':''}${m.fat!==null?' · F '+m.fat+'g':''}${m.carbs!==null?' · C '+m.carbs+'g':''}</small></div><div class="meal-right"><b>${energyFormat(m.kcal)} kcal</b><button class="btn secondary compact" data-edit-meal="${safeText(m.id)}" aria-label="食事記録を編集">編集</button><button class="btn danger" data-delete-meal="${safeText(m.id)}" aria-label="食事記録を削除">削除</button></div></div>`).join(''):'<div class="empty">この日の食事はまだ登録されていません。</div>';
+ renderMealHistory();
+}
+
+function renderMealHistory(){
+ const els=['meal-history-query','meal-history-period','meal-history-type','meal-history-from','meal-history-to'];if(els.some(id=>!$(id)))return;
+ const found=filterMeals(state.meals,{query:val('meal-history-query'),period:val('meal-history-period'),type:val('meal-history-type'),from:val('meal-history-from'),to:val('meal-history-to'),today:localToday()});
+ const days=groupMeals(found);$('meal-history-count').textContent=`${found.length}件 / ${days.length}日`;
+ $('meal-history-summary').innerHTML=found.length?`<span>検索結果の合計 <b>${compact(found.reduce((a,m)=>a+m.kcal,0))} kcal</b></span><span>食事 ${found.length}件</span><span>日数 ${days.length}日</span>`:'<span>指定した条件の記録はありません。</span>';
+ $('meal-history-list').innerHTML=days.map(day=>`<section class="meal-history-day"><div class="meal-history-day-header"><strong>${safeText(dateText(day.date))}</strong><span>${day.entries.length}件 · ${compact(day.kcal)} kcal${day.macroComplete?` · P ${day.protein.toFixed(1)}g F ${day.fat.toFixed(1)}g C ${day.carbs.toFixed(1)}g`:' · PFC一部未入力'}</span><button type="button" class="btn ghost compact" data-meal-go-date="${safeText(day.date)}">この日の収支</button></div>${day.entries.map(m=>`<div class="meal-history-entry"><div class="meal-history-entry-head"><div><strong>${safeText(m.name)}</strong><small>${mealLabels[m.mealType]} · ${energyFormat(m.kcal)} kcal${m.manualOverride?' · 手動合計':''}</small></div><button type="button" class="btn secondary compact" data-edit-meal="${safeText(m.id)}">編集</button></div><details><summary>材料・栄養の記録を開く</summary><div class="meal-history-detail"><p>たんぱく質 ${m.protein??'未入力'}g ／ 脂質 ${m.fat??'未入力'}g ／ 炭水化物 ${m.carbs??'未入力'}g</p>${m.rawText?`<p class="meal-raw">${safeText(m.rawText)}</p>`:''}${m.foodItems?.length?`<ul>${m.foodItems.map(i=>`<li>${safeText(i.label)}${i.excluded?'（除外）':''} · ${i.nutrients?.kcal??'未計上'} kcal / P ${i.nutrients?.protein??'—'}g F ${i.nutrients?.fat??'—'}g C ${i.nutrients?.carbs??'—'}g</li>`).join('')}</ul>`:'<p>食品別明細のない手入力記録です。</p>'}${m.notes?`<p>メモ：${safeText(m.notes)}</p>`:''}</div></details></div>`).join('')}</section>`).join('')||'<div class="empty">過去の食事記録はありません。期間・食事区分を変更して確認できます。</div>';
+}
+function closeMealEditor(){editingMealId=null;$('meal-edit-panel').hidden=true}
+function startMealEdit(id){
+ const m=state.meals.find(x=>x.id===id);if(!m)return toast('対象の食事が見つかりません');
+ editingMealId=id;$('meal-edit-panel').hidden=false;
+ const fields={date:m.date,type:m.mealType,name:m.name,kcal:m.kcal,protein:m.protein,fat:m.fat,carbs:m.carbs,raw:m.rawText,notes:m.notes};
+ for(const [key,v] of Object.entries(fields))$('meal-edit-'+key).value=v??'';
+ $('meal-edit-message').textContent=`${dateText(m.date)}の「${m.name}」を編集中。変更は保存するまで反映されません。`;
+ $('meal-edit-items').innerHTML=m.foodItems?.length?`<h4>保存済み食品別明細（${m.foodItems.length}品）</h4>${m.foodItems.map((item,i)=>`<div class="meal-edit-item"><label>食品名<input data-edit-item="${i}" data-edit-key="label" type="text" maxlength="300" value="${safeText(item.label)}"></label><div class="meal-edit-item-grid">${[['kcal','kcal'],['protein','P (g)'],['fat','F (g)'],['carbs','C (g)']].map(([k,t])=>`<label>${t}<input data-edit-item="${i}" data-edit-key="${k}" type="number" min="0" max="15000" step="0.1" value="${item.nutrients?.[k]??''}"></label>`).join('')}</div><label class="meal-edit-exclude"><input data-edit-item="${i}" data-edit-key="excluded" type="checkbox" ${item.excluded?'checked':''}>計上から除外</label></div>`).join('')}`:'<div class="info">この食事は合計値のみの記録です。食事名・原文・カロリー・PFCを編集できます。</div>';
+ $('meal-edit-recalc').hidden=!m.foodItems?.length;
+ $('meal-edit-panel').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function collectEditedFoodItems(m){
+ const items=structuredClone(m.foodItems||[]);
+ if(!items.length)return items;
+ for(const element of $('meal-edit-items').querySelectorAll('[data-edit-item]')){
+  const i=Number(element.dataset.editItem),key=element.dataset.editKey,item=items[i];if(!item)throw Error('食品明細を確認してください');
+  if(key==='label'){item.label=element.value.trim();if(!item.label)throw Error('食品名を空欄にできません');}
+  else if(key==='excluded')item.excluded=element.checked;
+  else {const text=element.value.trim();if(text!==''&&(!Number.isFinite(Number(text))||Number(text)<0||Number(text)>15000))throw Error('食品の栄養値が不正です');item.nutrients[key]=text===''?null:Number(text);}
+ }
+ return items;
+}
+function recalculateMealEditor(){
+ if(!editingMealId)return;
+ try{const m=state.meals.find(x=>x.id===editingMealId),items=collectEditedFoodItems(m),sum=calculateFoodTotals(items);
+  if(!sum.count||!sum.allKnown)throw Error('カロリー未確認の食品があります。各食品の数値を入力してください。');
+  for(const key of ['kcal','protein','fat','carbs'])$('meal-edit-'+key).value=sum.totals[key]??'';
+  $('meal-edit-message').textContent='食品別明細を合計欄へ反映しました。内容を確認して保存してください。';
+ }catch(e){toast('再計算できません：'+e.message)}
+}
+async function saveMealEdit(){
+ if(!editingMealId)return;
+ try{
+  const original=state.meals.find(x=>x.id===editingMealId);if(!original)throw Error('記録が見つかりません');
+  const foodItems=collectEditedFoodItems(original),fields={date:val('meal-edit-date'),mealType:val('meal-edit-type'),name:val('meal-edit-name'),rawText:val('meal-edit-raw'),notes:val('meal-edit-notes'),kcal:val('meal-edit-kcal'),protein:val('meal-edit-protein'),fat:val('meal-edit-fat'),carbs:val('meal-edit-carbs')};
+  if(fields.kcal==='')throw Error('カロリーを入力してください');
+  const update=normalizeMeal({...original,...fields,foodItems,id:original.id,createdAt:original.createdAt,updatedAt:new Date().toISOString()});
+  if(foodItems.length&&original.rawText!==update.rawText&&!confirm('箇条書きの元データを変更しました。保存済みの食品別明細は自動で再解析されません。食品別の栄養値も確認しましたか？'))return;
+  const sum=calculateFoodTotals(foodItems);
+  const differs=sum.count&&Object.entries(sum.totals).some(([k,v])=>v!==null&&update[k]!==null&&Math.abs(Number(v)-Number(update[k]))>(k==='kcal'?1:0.11));
+  if(differs&&!confirm('食品別明細の合計と入力した合計値が異なります。入力した合計を優先して保存しますか？'))return;
+  update.manualOverride=!!differs;
+  const before=state.meals;state.meals=updateMealById(state.meals,update);
+  try{await save()}catch(e){state.meals=before;throw e}
+  const moved=original.date!==update.date;closeMealEditor();
+  if(moved)$('nutrition-date').value=update.date;
+  renderNutrition();renderDashboardEnergy();toast('食事の修正を保存し、日別PFC・収支を更新しました');
+ }catch(e){toast('食事を更新できません：'+e.message)}
 }
 async function saveCaloriePlan(){
  try{
@@ -217,7 +277,7 @@ async function deleteMeal(id){
  const m=state.meals.find(x=>x.id===id);if(!m||!confirm(`「${m.name}」を削除しますか？`))return;
  const old=[...state.meals];state.meals=state.meals.filter(x=>x.id!==id);
  try{await save()}catch(e){state.meals=old;throw e}
- renderNutrition();renderDashboardEnergy();toast('食事記録を削除しました');
+ if(editingMealId===id)closeMealEditor();renderNutrition();renderDashboardEnergy();toast('食事記録を削除しました');
 }
 function renderSettings(){for(const k of ['height','weight','age','sex','fat','muscle','goal','level','display'])$('p-'+k).value=state.profile[k]??'';$('evaluation-level').value=state.evaluationLevel||'normal';renderExclusions();$('storage-message').textContent='保存方式：'+storageMode()+'。トレーニング・食事は端末ごとに保存。バックアップは暗号化されません。';}
 async function saveProfile(){const p={};for(const k of ['height','weight','age','sex','fat','muscle','goal','level','display'])p[k]=val('p-'+k);try{validateProfile(p);if(Number(state.profile.weight)!==Number(p.weight)){state.weights=state.weights||[];const d=localToday();const record={date:d,weight:Number(p.weight),savedAt:new Date().toISOString()};state.weights=state.weights.filter(x=>x.date!==d).concat(record);}state.profile=p;await save();renderDashboard();if(activeRoute==='nutrition')renderNutrition();toast('プロフィールを保存しました');}catch(e){toast(e.message)}}
@@ -247,10 +307,10 @@ async function importJSON(file){
    const oldState=state;try{state=data;await save()}catch(e){state=oldState;throw e}
    toast(`${data.logs.length}件を復元しました`);
   }else throw Error('取り込み方法を選択してください');
-  pending=null;renderSettings();setForecastControls();$('cal-activity').value=state.caloriePlan.activityFactor;$('cal-credit').value=state.caloriePlan.exerciseCredit;$('cal-adjust').value=state.caloriePlan.goalAdjustment;renderDashboard();renderHistory();renderProgress();renderNutrition();renderVitals();
+  closeMealEditor();pending=null;renderSettings();setForecastControls();$('cal-activity').value=state.caloriePlan.activityFactor;$('cal-credit').value=state.caloriePlan.exerciseCredit;$('cal-adjust').value=state.caloriePlan.goalAdjustment;renderDashboard();renderHistory();renderProgress();renderNutrition();renderVitals();
  }catch(e){toast('復元に失敗：'+e.message)}finally{$('import-json').value=''}
 }
-async function clearAll(){if(!confirm('すべての筋トレ履歴・身体プロフィールを削除します。続けますか？'))return;const word=prompt('完全削除するには「削除」と入力してください');if(word!=='削除')return;state=await clearStore();resetForm();renderSettings();setForecastControls();$('cal-activity').value=state.caloriePlan.activityFactor;$('cal-credit').value=state.caloriePlan.exerciseCredit;$('cal-adjust').value=state.caloriePlan.goalAdjustment;renderDashboard();renderNutrition();renderVitals();toast('端末内のデータを削除しました');}
+async function clearAll(){if(!confirm('すべての筋トレ履歴・身体プロフィールを削除します。続けますか？'))return;const word=prompt('完全削除するには「削除」と入力してください');if(word!=='削除')return;state=await clearStore();closeMealEditor();resetForm();renderSettings();setForecastControls();$('cal-activity').value=state.caloriePlan.activityFactor;$('cal-credit').value=state.caloriePlan.exerciseCredit;$('cal-adjust').value=state.caloriePlan.goalAdjustment;renderDashboard();renderNutrition();renderVitals();toast('端末内のデータを削除しました');}
 
 // v2.5 – daily macronutrients, ingredients, packages and cardiovascular log.
 let lastParsedFood=null;
@@ -394,7 +454,10 @@ function bind(){for(const selectId of ['detail-muscle-select','recovery-detail-m
  $('food-mode').addEventListener('change',()=>{lastParsedFood=null;lastParsedRaw='';$('food-preview').textContent='形式を変更しました。解析を実行してください。'});
  $('food-analyze').addEventListener('click',analyzeFood);$('food-preview').addEventListener('input',editFoodRow);$('food-preview').addEventListener('change',editFoodRow);$('food-save').addEventListener('click',saveFood);$('food-photo').addEventListener('change',e=>choosePhoto(e,'food'));$('food-photo-read').addEventListener('click',()=>tryPhotoOCR('food'));$('food-label-analyze').addEventListener('click',applyFoodLabel);$('save-pfc-target').addEventListener('click',savePFCGoal);$('pfc-preset').addEventListener('change',choosePFCPreset);
  $('vital-date').value=localToday();$('vital-time').value=new Date().toTimeString().slice(0,5);$('save-vital').addEventListener('click',saveVital);$('vital-photo').addEventListener('change',e=>choosePhoto(e,'vital'));$('vital-photo-read').addEventListener('click',()=>tryPhotoOCR('vital'));$('vital-text-apply').addEventListener('click',applyVitalText);$('vital-list').addEventListener('click',e=>{const t=e.target.closest('[data-delete-vital]');if(t)deleteVital(t.dataset.deleteVital)});$('export-vitals-csv').addEventListener('click',exportVitalsCSV);
- $('nutrition-date').addEventListener('change',renderNutrition);$('nutrition-workout-day').addEventListener('change',e=>{if(e.target.value){$('nutrition-date').value=e.target.value;renderNutrition()}});$('nutrition-today').addEventListener('click',()=>{$('nutrition-date').value=localToday();renderNutrition()});$('save-calorie-plan').addEventListener('click',saveCaloriePlan);$('save-meal').addEventListener('click',saveMeal);$('meal-list').addEventListener('click',e=>{const btn=e.target.closest('[data-delete-meal]');if(btn)deleteMeal(btn.dataset.deleteMeal)});
+ for(const id of ['meal-history-query','meal-history-period','meal-history-type','meal-history-from','meal-history-to'])$(id).addEventListener(id==='meal-history-query'?'input':'change',renderMealHistory);
+ $('meal-history-list').addEventListener('click',e=>{const btn=e.target.closest('button');if(!btn)return;if(btn.dataset.editMeal)startMealEdit(btn.dataset.editMeal);else if(btn.dataset.mealGoDate){$('nutrition-date').value=btn.dataset.mealGoDate;renderNutrition();$('page-nutrition').scrollIntoView({behavior:'smooth',block:'start'})}});
+ $('meal-edit-cancel').addEventListener('click',closeMealEditor);$('meal-edit-recalc').addEventListener('click',recalculateMealEditor);$('meal-edit-save').addEventListener('click',saveMealEdit);
+ $('nutrition-date').addEventListener('change',renderNutrition);$('nutrition-workout-day').addEventListener('change',e=>{if(e.target.value){$('nutrition-date').value=e.target.value;renderNutrition()}});$('nutrition-today').addEventListener('click',()=>{$('nutrition-date').value=localToday();renderNutrition()});$('save-calorie-plan').addEventListener('click',saveCaloriePlan);$('save-meal').addEventListener('click',saveMeal);$('meal-list').addEventListener('click',e=>{const btn=e.target.closest('button');if(!btn)return;if(btn.dataset.editMeal)startMealEdit(btn.dataset.editMeal);else if(btn.dataset.deleteMeal)deleteMeal(btn.dataset.deleteMeal)});
 }
 async function init(){try{({state}=await loadStore());$('recovery-date').value=localToday();$('tomorrow-base-date').value=localToday();$('storage-status').textContent=storageMode()==='indexeddb'?'● 端末内保存（外部同期なし）':'● 端末内代替保存（外部同期なし）';bind();resetForm();setForecastControls();renderDashboard();$('nutrition-date').value=localToday();$('cal-activity').value=state.caloriePlan.activityFactor;$('cal-credit').value=state.caloriePlan.exerciseCredit;$('cal-adjust').value=state.caloriePlan.goalAdjustment;if(state.logs.length)toast(`${state.logs.length}件の記録を読み込みました`);if('serviceWorker'in navigator&&location.protocol==='https:')navigator.serviceWorker.register('./sw.js').catch(()=>{});}catch(e){$('storage-status').textContent='保存エラー';toast('起動できません：'+e.message);console.error(e)}}
 init();
