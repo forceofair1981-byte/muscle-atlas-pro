@@ -1,11 +1,13 @@
+import {normalizeVital,validatePFCGoal} from './wellness.js';
+import {pfcForPreset,matchPfcPreset} from './presets.js';
 import {E, names} from './catalog.js';
 
-export const VERSION=5;
+export const VERSION=7;
 export const GOALS={balanced:'筋肥大＋減量',hypertrophy:'筋肥大',strength:'筋力向上',fatloss:'減量',proportion:'プロポーション改善（体型改善）'};
 export const defaultProfile=()=>({age:'30',height:'165',weight:'60',fat:'',muscle:'',sex:'none',display:'auto',goal:'balanced',level:'advanced'});
 export const defaultCaloriePlan=()=>({activityFactor:1.2,goalAdjustment:-250,exerciseCredit:0.5});
 export const defaultForecastPlan=()=>({dailyIntake:'',strengthMode:'trend',strengthMonthlyPct:0,exercise:''});
-export const emptyState=()=>({schemaVersion:VERSION,profile:defaultProfile(),logs:[],weights:[],meals:[],caloriePlan:defaultCaloriePlan(),forecastPlan:defaultForecastPlan(),updatedAt:new Date().toISOString()});
+export const emptyState=()=>({schemaVersion:VERSION,profile:defaultProfile(),logs:[],weights:[],meals:[],caloriePlan:defaultCaloriePlan(),forecastPlan:defaultForecastPlan(),vitals:[],pfcGoal:pfcForPreset('balanced'),pfcPreset:'balanced',updatedAt:new Date().toISOString()});
 const alias=E.flatMap(e=>e.a.map(a=>({e,a:a.normalize('NFKC').toLowerCase()}))).sort((a,b)=>b.a.length-a.a.length);
 const cardioCatalog=[{name:'トレッドミル',alias:['トレッドミル','treadmill'],met:null},{name:'エアロバイク',alias:['エアロバイク','stationary bike','フィットネスバイク'],met:5.8},{name:'ウォーキング',alias:['ウォーキング','walking','早歩き'],met:3.5},{name:'ランニング',alias:['ランニング','running','ジョギング'],met:7},{name:'ローイングマシン',alias:['ローイングマシン'],met:5.0},{name:'有酸素運動',alias:['有酸素運動','cardio'],met:5.0}];
 export const exerciseCatalog=E.map(x=>({name:x.n,primary:x.p,secondary:x.s}));
@@ -86,12 +88,17 @@ export const normalizeState=(data)=>{
  if(data.logs.length>20000)throw Error('記録件数が多すぎます。');
  const logs=data.logs.map(normalizeSession), ids=new Set();for(const l of logs){if(ids.has(l.id))l.id=uid();ids.add(l.id)}
  const meals=Array.isArray(data.meals)?data.meals.slice(-30000).map(normalizeMeal):[];
+ const vitals=Array.isArray(data.vitals)?data.vitals.slice(-30000).map(normalizeVital):[];
+ const vitalIds=new Set();for(const v of vitals){if(vitalIds.has(v.id))v.id=uid();vitalIds.add(v.id)}
+ let pfcGoal;try{pfcGoal=validatePFCGoal(data.pfcGoal||pfcForPreset('balanced'))}catch{pfcGoal=pfcForPreset('balanced')}
+ const matchedPreset=matchPfcPreset(pfcGoal);
+ const pfcPreset=data.pfcPreset ? (matchedPreset===data.pfcPreset?matchedPreset:'custom') : (data.pfcGoal?'custom':matchedPreset||'custom');
  const mealIds=new Set();for(const meal of meals){if(mealIds.has(meal.id))meal.id=uid();mealIds.add(meal.id)}
  const plan=validateCaloriePlan({...defaultCaloriePlan(),...(data.caloriePlan||{})});
  const fp=data.forecastPlan||{}, rawIntake=fp.dailyIntake, rawRate=Number(fp.strengthMonthlyPct);
  const forecastPlan={dailyIntake:rawIntake===''||rawIntake==null?'':Number.isFinite(Number(rawIntake))&&Number(rawIntake)>=1000&&Number(rawIntake)<=6000?Number(rawIntake):'',
  strengthMode:['trend','flat','manual'].includes(fp.strengthMode)?fp.strengthMode:'trend',strengthMonthlyPct:Number.isFinite(rawRate)&&rawRate>=-5&&rawRate<=5?rawRate:0,exercise:String(fp.exercise||'').slice(0,180)};
- return {schemaVersion:VERSION,profile:{...defaultProfile(),...Object.fromEntries(Object.entries(data.profile).filter(([k])=>k in defaultProfile()))},logs,weights:Array.isArray(data.weights)?data.weights.slice(-30000):[],meals,caloriePlan:plan,forecastPlan,updatedAt:new Date().toISOString()};
+ return {schemaVersion:VERSION,profile:{...defaultProfile(),...Object.fromEntries(Object.entries(data.profile).filter(([k])=>k in defaultProfile()))},logs,weights:Array.isArray(data.weights)?data.weights.slice(-30000):[],meals,vitals,pfcGoal,pfcPreset,caloriePlan:plan,forecastPlan,updatedAt:new Date().toISOString()};
 };
 /** Merge backups from prior builds without repeating any date already recorded on this device.
  * Existing profile and records take priority; preserve multi-session days from incoming when the date is new.
@@ -106,7 +113,8 @@ export function mergeMissingDays(current,incoming){
  const weightKeys=new Set(base.weights.map(w=>w.date));
  const mealKeys=new Set(base.meals.map(m=>m.id));
  const freshMeals=addition.meals.filter(m=>!mealKeys.has(m.id));
- return {state:normalizeState({...base,logs:[...base.logs,...fresh],profile:profileIsSet?base.profile:addition.profile,weights:[...base.weights,...addition.weights.filter(w=>!weightKeys.has(w.date))],meals:[...base.meals,...freshMeals],caloriePlan:base.caloriePlan}),added:fresh.length,skipped: addition.logs.length-fresh.length,mealsAdded:freshMeals.length};
+ const vitalKeys=new Set(base.vitals.map(v=>v.id));const freshVitals=addition.vitals.filter(v=>!vitalKeys.has(v.id));
+ return {state:normalizeState({...base,logs:[...base.logs,...fresh],profile:profileIsSet?base.profile:addition.profile,weights:[...base.weights,...addition.weights.filter(w=>!weightKeys.has(w.date))],meals:[...base.meals,...freshMeals],vitals:[...base.vitals,...freshVitals],pfcGoal:base.pfcGoal,pfcPreset:base.pfcPreset,caloriePlan:base.caloriePlan}),added:fresh.length,skipped: addition.logs.length-fresh.length,mealsAdded:freshMeals.length,vitalsAdded:freshVitals.length};
 }
 export function validateProfile(p){const h=Number(p.height),w=Number(p.weight),age=Number(p.age);if(!Number.isFinite(h)||h<90||h>240)throw Error('身長は90〜240cmで入力してください');if(!Number.isFinite(w)||w<25||w>350)throw Error('体重は25〜350kgで入力してください');if(p.age!==''&&(!Number.isInteger(age)||age<1||age>120))throw Error('年齢を確認してください');if(p.fat!==''&&(n(p.fat)<1||n(p.fat)>70))throw Error('体脂肪率を確認してください');return true;}
 export function setsOf(log){return (log?.exercises||[]).reduce((a,e)=>a+(e.groups||[]).reduce((n,g)=>n+nSafe(g.sets),0),0)}
@@ -167,7 +175,7 @@ export function normalizeMeal(m){
   macros[key]=v;
  }
  const mealType=['breakfast','lunch','dinner','snack'].includes(m.mealType)?m.mealType:'snack';
- return {id:String(m.id||uid()).slice(0,120),date,name,kcal:Math.round(kcal),...macros,mealType,notes:String(m.notes||'').slice(0,500),createdAt:m.createdAt||new Date().toISOString()};
+ return {id:String(m.id||uid()).slice(0,120),date,name,kcal:Math.round(kcal),...macros,mealType,notes:String(m.notes||'').slice(0,500),inputMode:['ingredients','dish','product','manual'].includes(m.inputMode)?m.inputMode:'manual',estimated:!!m.estimated,rawText:String(m.rawText||'').slice(0,4000),createdAt:m.createdAt||new Date().toISOString()};
 }
 export function dayCalorieBalance(state,date){
  const bmr=restingMetabolicRate(state.profile);

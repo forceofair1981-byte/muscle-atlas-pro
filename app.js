@@ -1,4 +1,7 @@
+import {parseFoodLines,parseLabel,dailyPFC,validatePFCGoal,parseBPText,normalizeVital} from './wellness.js';
 import {E,names} from './catalog.js';
+import {PFC_PRESETS,pfcForPreset,matchPfcPreset,pfcGramTargets} from './presets.js';
+import {recommendForMuscle} from './recommend.js';
 import {anatomySVG} from './anatomy.js';
 import {forecastScenario,normalizeForecastSettings} from './forecast.js';
 import {loadStore,saveStore,clearStore,storageMode} from './db.js';
@@ -9,7 +12,7 @@ const number=x=>Number(x)||0;
 function toast(t){const el=$('toast');el.textContent=t;el.classList.add('show');clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>el.classList.remove('show'),3300)}
 const dateText=s=>s?.replaceAll('-','/');
 const compact=n=>Math.round(n).toLocaleString('ja-JP');
-function route(name){if(!['dashboard','record','history','progress','nutrition','settings'].includes(name))return;activeRoute=name;for(const el of document.querySelectorAll('.page'))el.classList.toggle('active',el.id==='page-'+name);for(const el of document.querySelectorAll('[data-route]'))el.classList.toggle('active',el.dataset.route===name);$('page-title').textContent={dashboard:'ダッシュボード',record:'トレーニング記録',history:'トレーニング履歴',progress:'成長・分析',nutrition:'カロリー管理',settings:'設定・データ'}[name];if(name==='dashboard')renderDashboard();if(name==='history')renderHistory();if(name==='progress')renderProgress();if(name==='nutrition')renderNutrition();if(name==='settings')renderSettings();window.scrollTo({top:0,behavior:'instant'});}
+function route(name){if(!['dashboard','record','history','progress','nutrition','vitals','settings'].includes(name))return;activeRoute=name;for(const el of document.querySelectorAll('.page'))el.classList.toggle('active',el.id==='page-'+name);for(const el of document.querySelectorAll('[data-route]'))el.classList.toggle('active',el.dataset.route===name);$('page-title').textContent={dashboard:'ダッシュボード',record:'トレーニング記録',history:'トレーニング履歴',progress:'成長・分析',nutrition:'カロリー管理',vitals:'血圧・心拍数',settings:'設定・データ'}[name];if(name==='dashboard')renderDashboard();if(name==='history')renderHistory();if(name==='progress')renderProgress();if(name==='nutrition')renderNutrition();if(name==='vitals')renderVitals();if(name==='settings')renderSettings();window.scrollTo({top:0,behavior:'instant'});}
 function save(){return saveStore(state).then(v=>{state=v;$('storage-status').textContent=storageMode()==='indexeddb'?'● IndexedDB・端末内保存':'● 代替保存（端末内）';return v}).catch(e=>{toast('保存失敗：'+e.message);throw e});}
 function viewLogs(){return filterPeriod(state.logs,period)}
 function renderDashboard(){const logs=viewLogs(),v=summary(logs),p=state.profile;
@@ -19,9 +22,18 @@ function renderDashboard(){const logs=viewLogs(),v=summary(logs),p=state.profile
  $('svg-front').innerHTML=anatomySVG('front',model,v.muscles,selectedMuscle);$('svg-back').innerHTML=anatomySVG('back',model,v.muscles,selectedMuscle);
  const order=Object.entries(v.muscles).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);$('muscle-ranking').innerHTML=order.length?order.slice(0,8).map(([k,v])=>`<div class="barline"><span>${safeText(names[k])}</span><span class="bar-bg"><span class="bar-inner" style="display:block;width:${Math.min(100,v/Math.max(order[0][1],1)*100).toFixed(0)}%"></span></span><b>${v.toFixed(1)}</b></div>`).join('')+'<p class="fine">直接1.0、補助0.5のセット相当値。部位間で重複します。</p>':'<div class="empty">トレーニングを追加すると部位別の分布が表示されます。</div>';
  renderDashboardEnergy();renderRecovery();
- $('feedback').innerHTML=feedback(logs,p.goal).map(t=>`<p>${safeText(t)}</p>`).join('');showMuscle(logs,v.muscles);}
+ $('feedback').innerHTML=feedback(logs,p.goal).map(t=>`<p>${safeText(t)}</p>`).join('');showMuscle(logs,v.muscles);renderSuggestions('activity-suggestions',selectedMuscle,localToday());}
 function showMuscle(logs,totals){const id=selectedMuscle;if(!id){$('muscle-detail').innerHTML='<strong>部位を選択してください</strong><small>刺激セット相当と元の種目を表示します。</small>';return}
  const rows=logs.flatMap(l=>(l.exercises||[]).filter(e=>e.primary.includes(id)||e.secondary.includes(id)).map(e=>({date:l.date,name:e.displayName||e.name,sets:e.groups.reduce((v,g)=>v+g.sets,0),ratio:e.primary.includes(id)?1:.5})));$('muscle-detail').innerHTML=`<strong>${safeText(names[id])}：${number(totals[id]).toFixed(1)} セット相当</strong><small>${rows.length?rows.map(x=>`${safeText(x.date)} ${safeText(x.name)}：${x.sets}セット × ${x.ratio}`).join('<br>'):'該当記録はありません'}</small>`;}
+function renderSuggestions(targetId,muscleId,asOf){
+ const el=$(targetId);if(!muscleId){el.innerHTML='<div class="suggestion-empty">筋肉をタップすると、おすすめの種目と回復状況を表示します。</div>';el.removeAttribute('data-state');return;}
+ const recovery=recoveryForecast(state.logs,asOf,state.profile).items[muscleId];
+ const model=recommendForMuscle(muscleId,recovery,state.profile.goal);
+ if(!model){el.textContent='選択した筋肉は登録されていません';return;}
+ el.dataset.state=model.status;
+ const badge=model.status==='warning'?'赤：警告':model.status==='caution'?'黄：注意':'青：記録上は可';
+ el.innerHTML=`<div class="suggestion-head"><h4>${safeText(model.name)} の種目候補</h4><span class="suggestion-tag">${badge}</span></div><p class="suggestion-desc">${safeText(model.headline)}。${safeText(model.guidance)}</p><div class="suggestion-items">${model.items.map((x,i)=>`<div class="suggestion-item"><strong>${i+1}. ${safeText(x.name)}</strong><small>${safeText(x.level)} · ${safeText(x.note)}</small></div>`).join('')}</div><p class="suggestion-prescription">${model.canTrainNormally?'目安：':'回復後の候補：'}${safeText(model.prescription)}</p><p class="fine">種目は例示です。関節痛・強い筋肉痛・体調不良がある日は無理をせず、専門家の助言を優先してください。青色も医学的な運動許可ではありません。</p>`;
+}
 const recoveryPalette={ready:'#419de5',caution:'#f1c24d',warning:'#f06473'};
 function renderRecovery(){
  const asOf=val('recovery-date')||localToday();
@@ -38,6 +50,7 @@ function renderRecovery(){
  $('recovery-list').innerHTML=active.length?active.map(x=>`<div class="recovery-entry" data-state="${x.state}"><span>${safeText(x.name)}<small>最終記録 ${safeText(x.lastDate)} ／ ${x.lastExposure}セット相当</small></span><b>${x.remainingDays?`残り約${x.remainingDays}日`:'記録上は可'}</b></div>`).join(''):'<div class="empty">この判定日までに部位別の筋トレ記録がありません。青は十分に回復した証拠ではありません。</div>';
  const x=selectedRecoveryMuscle?f.items[selectedRecoveryMuscle]:null;
  $('recovery-detail').innerHTML=x?`<strong>${safeText(x.name)}：${x.statusLabel}</strong><small>${x.hasRecord?`最終トレーニング ${x.lastDate}／${x.lastExposure}セット相当。推定休養日数 ${x.restDays}日、判定日時点で残り約${x.remainingDays}日。`:'この部位の履歴なし。青色は回復完了の保証ではありません。'}</small>`:'<strong>筋肉をタップ</strong><small>最後のトレーニングと休養目安を表示します。</small>';
+ renderSuggestions('recovery-suggestions',selectedRecoveryMuscle,asOf);
 }
 function resetForm(){editingId=null;pending=null;ignoreUnmatched.clear();$('log-date').value=localToday();$('log-minutes').value='';$('log-rest').value='';$('log-intensity').value='moderate';$('log-text').value='';$('log-notes').value='';$('preview-count').textContent='未解析';$('preview-summary').textContent='入力後「入力を解析する」を押してください。';for(const id of ['preview-exercises','preview-cardio','preview-unmatched','review-alerts'])$(id).innerHTML='';$('save-session').disabled=true;$('cancel-edit').hidden=true;$('duplicate-choice').hidden=true;$('duplicate-mode').value='';}
 function analyze(){pending=parseTraining(val('log-text'));
@@ -121,6 +134,7 @@ function renderNutrition(){
  $('nutr-caveat').textContent=notices.join(' ');
  const meals=state.meals.filter(m=>m.date===dt);
  $('meal-count').textContent=meals.length+'件';
+ renderDailyPFC(dt);
  $('meal-list').innerHTML=meals.length?meals.map(m=>`<div class="meal-item"><div><strong>${safeText(m.name)}</strong><small>${mealLabels[m.mealType]||'食事'}${m.protein!==null?' · P '+m.protein+'g':''}${m.fat!==null?' · F '+m.fat+'g':''}${m.carbs!==null?' · C '+m.carbs+'g':''}</small></div><div class="meal-right"><b>${energyFormat(m.kcal)} kcal</b><button class="btn danger" data-delete-meal="${safeText(m.id)}" aria-label="食事記録を削除">削除</button></div></div>`).join(''):'<div class="empty">この日の食事はまだ登録されていません。</div>';
 }
 async function saveCaloriePlan(){
@@ -178,10 +192,77 @@ async function importJSON(file){
    const oldState=state;try{state=data;await save()}catch(e){state=oldState;throw e}
    toast(`${data.logs.length}件を復元しました`);
   }else throw Error('取り込み方法を選択してください');
-  pending=null;renderSettings();setForecastControls();$('cal-activity').value=state.caloriePlan.activityFactor;$('cal-credit').value=state.caloriePlan.exerciseCredit;$('cal-adjust').value=state.caloriePlan.goalAdjustment;renderDashboard();renderHistory();renderProgress();renderNutrition();
+  pending=null;renderSettings();setForecastControls();$('cal-activity').value=state.caloriePlan.activityFactor;$('cal-credit').value=state.caloriePlan.exerciseCredit;$('cal-adjust').value=state.caloriePlan.goalAdjustment;renderDashboard();renderHistory();renderProgress();renderNutrition();renderVitals();
  }catch(e){toast('復元に失敗：'+e.message)}finally{$('import-json').value=''}
 }
-async function clearAll(){if(!confirm('すべての筋トレ履歴・身体プロフィールを削除します。続けますか？'))return;const word=prompt('完全削除するには「削除」と入力してください');if(word!=='削除')return;state=await clearStore();resetForm();renderSettings();setForecastControls();$('cal-activity').value=state.caloriePlan.activityFactor;$('cal-credit').value=state.caloriePlan.exerciseCredit;$('cal-adjust').value=state.caloriePlan.goalAdjustment;renderDashboard();renderNutrition();toast('端末内のデータを削除しました');}
+async function clearAll(){if(!confirm('すべての筋トレ履歴・身体プロフィールを削除します。続けますか？'))return;const word=prompt('完全削除するには「削除」と入力してください');if(word!=='削除')return;state=await clearStore();resetForm();renderSettings();setForecastControls();$('cal-activity').value=state.caloriePlan.activityFactor;$('cal-credit').value=state.caloriePlan.exerciseCredit;$('cal-adjust').value=state.caloriePlan.goalAdjustment;renderDashboard();renderNutrition();renderVitals();toast('端末内のデータを削除しました');}
+
+// v2.5 – daily macronutrients, ingredients, packages and cardiovascular log.
+let lastParsedFood=null;
+const previewPhotoURL={food:null,vital:null};
+const eatSource={ingredients:'材料',dish:'完成品',product:'市販品'};
+function renderDailyPFC(date){
+ const result=dailyPFC(state.meals,date,state.pfcGoal||{protein:30,fat:25,carbs:45});
+ const colors={protein:'#5eaaf0',fat:'#f4be67',carbs:'#5bd4ac'};
+ const labels={protein:'P たんぱく質',fat:'F 脂質',carbs:'C 炭水化物'};
+ const p=result.ratios.protein,f=result.ratios.fat,c=result.ratios.carbs;
+ $('pfc-donut').style.background=result.knownCount?`conic-gradient(${colors.protein} 0 ${p}%,${colors.fat} ${p}% ${p+f}%,${colors.carbs} ${p+f}% 100%)`:'conic-gradient(#233e56 0% 100%)';
+ $('pfc-total').textContent=result.knownCount?result.macroKcal.toLocaleString('ja-JP'):'—';
+ $('pfc-status').textContent=result.complete?'PFC記録済':result.knownCount?'一部のみ集計':'PFC未入力';
+ $('pfc-rows').innerHTML=Object.keys(labels).map(key=>`<div class="pfc-row"><div class="split"><strong style="color:${colors[key]}">${labels[key]}</strong><span>${result.knownCount?result.totals[key].toFixed(1)+' g / '+result.ratios[key].toFixed(1)+' %':'—'}</span></div><div class="pfc-rail"><span style="width:${result.knownCount?result.ratios[key]:0}%;background:${colors[key]}"></span></div><small>目標 ${result.target[key]}%</small></div>`).join('');
+ $('pfc-missing').textContent=!result.count?'この日の食事がまだ登録されていません。':result.missingCount?`PFC未入力の食事が${result.missingCount}件あります。上の割合はPFCが揃った${result.knownCount}件だけの部分集計で、1日全体の割合ではありません。`:`${result.count}件のPFC入力を集計しました。商品ラベルのkcal合計とPFC換算エネルギーは異なる場合があります。`;
+ const preset=state.pfcPreset||matchPfcPreset(state.pfcGoal)||'custom';const select=$('pfc-preset');
+ let custom=select.querySelector('[value="custom"]');
+ if(preset==='custom'&&!custom){custom=document.createElement('option');custom.value='custom';custom.textContent='手動設定（以前の設定）';select.appendChild(custom)}
+ if(preset!=='custom'&&custom)custom.remove();
+ select.value=preset;
+ $('pfc-preset-help').textContent=preset==='custom'?'以前の手動設定比率を保持しています。4つの目的を選ぶと変更されます。':'選択した目標の比率が保存されています。数値欄から手動調整もできます。';
+ const dailyTarget=dayCalorieBalance(state,date).target;
+ const grams=pfcGramTargets(dailyTarget,result.target);
+ $('pfc-target-grams').textContent=grams?`今日の推定摂取目標 ${Math.round(dailyTarget)}kcal に対する目安：P ${grams.protein}g / F ${grams.fat}g / C ${grams.carbs}g`:'プロフィールに年齢・身長・体重・性別を入力すると、摂取目標kcalからPFC目標gも計算できます。';
+ for(const [key,input] of [['protein','pfc-target-p'],['fat','pfc-target-f'],['carbs','pfc-target-c']]){if(document.activeElement!==$(input))$(input).value=result.target[key]}
+}
+async function savePFCGoal(){try{const v=validatePFCGoal({protein:val('pfc-target-p'),fat:val('pfc-target-f'),carbs:val('pfc-target-c')});const old=state.pfcGoal,oldPreset=state.pfcPreset;state.pfcGoal=v;state.pfcPreset=matchPfcPreset(v)||'custom';try{await save()}catch(e){state.pfcGoal=old;state.pfcPreset=oldPreset;throw e}renderNutrition();toast('PFCの目標割合を保存しました')}catch(e){toast(e.message)}}
+async function choosePFCPreset(){const key=val('pfc-preset');if(!(key in PFC_PRESETS))return;
+ const old=state.pfcGoal,oldPreset=state.pfcPreset;state.pfcGoal=pfcForPreset(key);state.pfcPreset=key;
+ try{await save();renderNutrition();toast(`${PFC_PRESETS[key].label}のPFC目標を保存しました`)}catch(e){state.pfcGoal=old;state.pfcPreset=oldPreset;renderNutrition();toast('PFCの保存に失敗しました：'+e.message)}
+}
+function getFoodResult(){const mode=val('food-mode'),raw=val('food-lines');const result=mode==='product'?{...parseFoodLines(raw,mode),label:parseLabel(raw)}:parseFoodLines(raw,mode);
+ const totals=mode==='product'&&result.label.found?result.label:result.totals;
+ return {...result,totals};}
+function analyzeFood(){lastParsedFood=getFoodResult();const v=lastParsedFood;
+ const lines=v.items.map(item=>`<div class="food-analyzed-row">${item.recognized?'✓ ':'? '}${safeText(item.label)}<small>${item.source==='reference'?'食品参考値による概算':item.source==='label'?'入力された栄養表示':'栄養値不明'}</small></div>`).join('');
+ $('food-preview').innerHTML=`${lines||'入力がありません。'}${v.unknown.length?`<p>未認識：${safeText(v.unknown.join(' / '))}</p>`:''}<p>${v.estimated?'一部の食品に概算値を使用。':'ラベルや完成品は実値の確認が必要です。'} 分量や調理方法で変わります。</p>`;
+ for(const [k,id] of [['kcal','food-kcal'],['protein','food-protein'],['fat','food-fat'],['carbs','food-carbs']])$(id).value=v.totals[k]===null||v.totals[k]===undefined?'':v.totals[k];
+ if(v.mode==='product'&&v.label?.found)$('food-preview').textContent+=' ラベル解析：'+v.label.warning;
+ return v;
+}
+async function saveFood(){
+ try{const raw=val('food-lines').trim();const name=val('food-name').trim()||raw.split(/\n/)[0]?.replace(/^[・•\-*\s]+/,'').slice(0,180);if(!raw)throw Error('箇条書きの食事内容を入力してください');
+ const kcal=val('food-kcal');if(kcal==='')throw Error('カロリーを確認し、入力してください。未知の料理は推測しません。');
+ const row=normalizeMeal({id:uid(),date:val('nutrition-date')||localToday(),mealType:val('food-meal-type'),name,kcal,protein:val('food-protein'),fat:val('food-fat'),carbs:val('food-carbs'),rawText:raw,inputMode:val('food-mode'),estimated:!!lastParsedFood?.estimated});
+ // Repeated snack entries are explicitly supported: each click is a separate intake.
+ const old=state.meals;state.meals=[...state.meals,row];try{await save()}catch(e){state.meals=old;throw e}
+ $('food-lines').value='';$('food-name').value='';for(const id of ['food-kcal','food-protein','food-fat','food-carbs'])$(id).value='';lastParsedFood=null;$('food-preview').textContent='保存しました。次の食事・間食を続けて入力できます。';renderNutrition();renderDashboardEnergy();toast('食事を追加しました。同日の間食は累積されます。');
+ }catch(e){toast(e.message)}
+}
+function choosePhoto(e,kind){const file=e.target.files?.[0];const target=kind==='food'?'food-photo-preview':'vital-photo-preview';if(previewPhotoURL[kind])URL.revokeObjectURL(previewPhotoURL[kind]);previewPhotoURL[kind]=null;if(!file)return;if(!file.type.startsWith('image/')){toast('画像ファイルを指定してください');return}if(file.size>12*1024*1024){toast('12MB以下の画像にしてください');return}previewPhotoURL[kind]=URL.createObjectURL(file);const image=document.createElement('img');image.src=previewPhotoURL[kind];image.alt='選択した写真の端末内プレビュー';$(target).replaceChildren(image);$(kind==='food'?'food-photo-status':'vital-photo-status').textContent='写真を選択しました。写真はアプリの保存データに含みません。OCRに対応しない端末は写真の文字をコピーして入力してください。'}
+async function tryPhotoOCR(kind){const pick=kind==='food'?'food-photo':'vital-photo',target=kind==='food'?'food-label-text':'vital-photo-text',status=kind==='food'?'food-photo-status':'vital-photo-status';if(!$(pick).files?.[0])return toast('写真を先に選択してください');if(typeof window.TextDetector!=='function'){$(status).textContent='このブラウザでは端末内OCRが利用できません。iPhoneの「写真」で画像を開き、「テキスト認識表示」でコピーして下の欄へ貼り付けてください。写真は送信しません。';return}
+ try{const img=new Image();img.src=previewPhotoURL[kind];await img.decode();const results=await new window.TextDetector().detect(img);$(target).value=results.map(x=>x.rawValue).join('\n');$(status).textContent='端末内で文字を抽出しました。保存前に数値を照合してください。';}catch(e){$(status).textContent='文字認識に失敗しました。写真アプリの「テキスト認識表示」でコピーしてください。';}
+}
+function applyFoodLabel(){const result=parseLabel(val('food-label-text'));for(const [k,id] of [['kcal','food-kcal'],['protein','food-protein'],['fat','food-fat'],['carbs','food-carbs']])if(result[k]!==null)$(id).value=result[k];$('food-photo-status').textContent=result.warning+' 商品ラベルが「100gあたり」「1袋あたり」のどちらか確認し、記録する摂取量に合わせて修正してください。';if(result.found){$('food-mode').value='product';if(!val('food-lines'))$('food-lines').value=val('food-label-text');}}
+function applyVitalText(){const result=parseBPText(val('vital-photo-text'));for(const [k,id] of [['systolic','vital-sys'],['diastolic','vital-dia'],['pulse','vital-pulse']])if(result[k]!==null)$(id).value=result[k];$('vital-photo-status').textContent=`${result.recognized}項目を抽出しました。必ず測定器の数字と照合してから保存してください。`;}
+function renderVitals(){const sorted=[...(state.vitals||[])].sort((a,b)=>(a.date+' '+a.time).localeCompare(b.date+' '+b.time));$('vital-count').textContent=sorted.length+'件';
+ const recent=sorted.slice(-20),bp=recent.filter(x=>x.systolic!==null&&x.diastolic!==null),pulse=recent.filter(x=>x.pulse!==null);
+ $('vital-bp-chart').innerHTML=bp.length?`<span class="fine">最高血圧</span>${svgChart(bp.map(x=>({label:x.date,value:x.systolic})),{suffix:'mmHg'})}<span class="fine">最低血圧</span>${svgChart(bp.map(x=>({label:x.date,value:x.diastolic})),{suffix:'mmHg',color:'#f3c76e'})}`:'<div class="empty">血圧の記録がありません</div>';
+ $('vital-pulse-chart').innerHTML=pulse.length?svgChart(pulse.map(x=>({label:x.date,value:x.pulse})),{suffix:'bpm'}):'<div class="empty">心拍数の記録がありません</div>';
+ $('vital-list').innerHTML=sorted.length?sorted.slice().reverse().map(x=>`<div class="meal-item"><div><strong>${safeText(x.date)} ${safeText(x.time)} · ${x.context==='rest'?'安静時':x.context==='postworkout'?'運動後':'その他'}</strong><small>血圧 ${x.systolic??'—'} / ${x.diastolic??'—'} mmHg · 心拍 ${x.pulse??'—'} bpm ${x.notes?' · '+safeText(x.notes):''}</small></div><button class="btn danger" data-delete-vital="${safeText(x.id)}">削除</button></div>`).join(''):'<div class="empty">まだ測定値がありません。</div>';
+}
+async function saveVital(){try{const o=normalizeVital({id:uid(),date:val('vital-date'),time:val('vital-time'),systolic:val('vital-sys'),diastolic:val('vital-dia'),pulse:val('vital-pulse'),context:val('vital-context'),notes:val('vital-notes'),source:val('vital-photo-text').trim()?'photo-reviewed':'manual'});const old=state.vitals;state.vitals=[...state.vitals,o];try{await save()}catch(e){state.vitals=old;throw e}renderVitals();toast('測定値を端末に保存しました');
+ if(o.systolic!==null&&o.diastolic!==null&&(o.systolic>180||o.diastolic>120))toast('著しく高い値です。安静後に再測定し、医療機関へ相談してください。症状を伴う場合は救急対応が必要です。');
+ }catch(e){toast('保存できません：'+e.message)}}
+async function deleteVital(id){const v=state.vitals.find(x=>x.id===id);if(!v||!confirm('この測定記録を削除しますか？'))return;const old=state.vitals;state.vitals=state.vitals.filter(x=>x.id!==id);try{await save()}catch(e){state.vitals=old;throw e}renderVitals();toast('削除しました')}
+function exportVitalsCSV(){const rows=[['date','time','systolic_mmHg','diastolic_mmHg','pulse_bpm','condition','source','notes']];for(const v of state.vitals)rows.push([v.date,v.time,v.systolic??'',v.diastolic??'',v.pulse??'',v.context,v.source,v.notes]);const csv='\uFEFF'+rows.map(row=>row.map(x=>'"'+String(x??'').replace(/"/g,'""')+'"').join(',')).join('\r\n');download('MuscleAtlasPro_Vitals_'+localToday()+'.csv',csv,'text/csv;charset=utf-8');toast('血圧・心拍数CSVを作成しました')}
 function bind(){document.querySelectorAll('[data-route]').forEach(x=>x.addEventListener('click',()=>route(x.dataset.route)));document.querySelectorAll('[data-days]').forEach(x=>x.addEventListener('click',()=>{period=Number(x.dataset.days);selectedMuscle=null;document.querySelectorAll('[data-days]').forEach(y=>y.classList.toggle('active',x===y));renderDashboard()}));
  $('recovery-date').addEventListener('change',renderRecovery);
  $('recovery-side').addEventListener('change',()=>{const v=val('recovery-side');$('recovery-body-grid').className='body-grid'+(v==='both'?'':' single '+v)});
@@ -199,6 +280,9 @@ function bind(){document.querySelectorAll('[data-route]').forEach(x=>x.addEventL
  $('preview-unmatched').addEventListener('change',e=>{if(e.target.dataset.ignore===undefined)return;const id=Number(e.target.dataset.ignore);if(e.target.checked)ignoreUnmatched.add(id);else ignoreUnmatched.delete(id)});
  $('history-query').addEventListener('input',renderHistory);$('history-list').addEventListener('click',e=>{const t=e.target.closest('button');if(!t)return;if(t.dataset.edit)editLog(t.dataset.edit);else if(t.dataset.delete)deleteLog(t.dataset.delete)});
  $('e1rm-exercise').addEventListener('change',renderProgress);$('forecast-calc').addEventListener('click',renderForecast);$('forecast-mode').addEventListener('change',renderForecast);$('forecast-exercise').addEventListener('change',renderForecast);$('forecast-save').addEventListener('click',saveForecastPlan);$('save-profile').addEventListener('click',saveProfile);$('export-json').addEventListener('click',exportJSON);$('export-csv').addEventListener('click',exportCSV);$('export-meals-csv').addEventListener('click',exportMealsCSV);$('import-json').addEventListener('change',e=>importJSON(e.target.files[0]));$('clear-data').addEventListener('click',clearAll);
+ $('food-mode').addEventListener('change',()=>{lastParsedFood=null;$('food-preview').textContent='形式を変更しました。解析を実行してください。'});
+ $('food-analyze').addEventListener('click',analyzeFood);$('food-save').addEventListener('click',saveFood);$('food-photo').addEventListener('change',e=>choosePhoto(e,'food'));$('food-photo-read').addEventListener('click',()=>tryPhotoOCR('food'));$('food-label-analyze').addEventListener('click',applyFoodLabel);$('save-pfc-target').addEventListener('click',savePFCGoal);$('pfc-preset').addEventListener('change',choosePFCPreset);
+ $('vital-date').value=localToday();$('vital-time').value=new Date().toTimeString().slice(0,5);$('save-vital').addEventListener('click',saveVital);$('vital-photo').addEventListener('change',e=>choosePhoto(e,'vital'));$('vital-photo-read').addEventListener('click',()=>tryPhotoOCR('vital'));$('vital-text-apply').addEventListener('click',applyVitalText);$('vital-list').addEventListener('click',e=>{const t=e.target.closest('[data-delete-vital]');if(t)deleteVital(t.dataset.deleteVital)});$('export-vitals-csv').addEventListener('click',exportVitalsCSV);
  $('nutrition-date').addEventListener('change',renderNutrition);$('save-calorie-plan').addEventListener('click',saveCaloriePlan);$('save-meal').addEventListener('click',saveMeal);$('meal-list').addEventListener('click',e=>{const btn=e.target.closest('[data-delete-meal]');if(btn)deleteMeal(btn.dataset.deleteMeal)});
 }
 async function init(){try{({state}=await loadStore());$('recovery-date').value=localToday();$('storage-status').textContent=storageMode()==='indexeddb'?'● 端末内保存（外部同期なし）':'● 端末内代替保存（外部同期なし）';bind();resetForm();setForecastControls();renderDashboard();$('nutrition-date').value=localToday();$('cal-activity').value=state.caloriePlan.activityFactor;$('cal-credit').value=state.caloriePlan.exerciseCredit;$('cal-adjust').value=state.caloriePlan.goalAdjustment;if(state.logs.length)toast(`${state.logs.length}件の記録を読み込みました`);if('serviceWorker'in navigator&&location.protocol==='https:')navigator.serviceWorker.register('./sw.js').catch(()=>{});}catch(e){$('storage-status').textContent='保存エラー';toast('起動できません：'+e.message);console.error(e)}}
