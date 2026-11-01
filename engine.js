@@ -3,13 +3,13 @@ import {pfcForPreset,matchPfcPreset} from './presets.js';
 import {E, names} from './catalog.js';
 import {DETAIL_IDS} from './detail.js';
 
-export const VERSION=11;
+export const VERSION=12;
 export const GOALS={balanced:'筋肥大＋減量',hypertrophy:'筋肥大',strength:'筋力向上',fatloss:'減量',proportion:'プロポーション改善（体型改善）'};
 export const defaultProfile=()=>({age:'30',height:'165',weight:'60',fat:'',muscle:'',sex:'none',display:'auto',goal:'balanced',level:'advanced'});
 export const defaultCaloriePlan=()=>({activityFactor:1.2,goalAdjustment:-250,exerciseCredit:0.5});
 export const EVALUATION_LEVELS={gentle:'優しい',normal:'普通',strict:'厳しい'};
 export const defaultForecastPlan=()=>({dailyIntake:'',strengthMode:'trend',strengthMonthlyPct:0,exercise:''});
-export const emptyState=()=>({schemaVersion:VERSION,profile:defaultProfile(),logs:[],weights:[],meals:[],caloriePlan:defaultCaloriePlan(),forecastPlan:defaultForecastPlan(),evaluationLevel:'normal',excludedMuscles:[],vitals:[],pfcGoal:pfcForPreset('balanced'),pfcPreset:'balanced',updatedAt:new Date().toISOString()});
+export const emptyState=()=>({schemaVersion:VERSION,profile:defaultProfile(),profileHistory:[],logs:[],weights:[],meals:[],caloriePlan:defaultCaloriePlan(),forecastPlan:defaultForecastPlan(),evaluationLevel:'normal',excludedMuscles:[],vitals:[],pfcGoal:pfcForPreset('balanced'),pfcPreset:'balanced',updatedAt:new Date().toISOString()});
 const alias=E.flatMap(e=>e.a.map(a=>({e,a:a.normalize('NFKC').toLowerCase()}))).sort((a,b)=>b.a.length-a.a.length);
 const cardioCatalog=[{name:'トレッドミル',alias:['トレッドミル','treadmill'],met:null},{name:'エアロバイク',alias:['エアロバイク','stationary bike','フィットネスバイク'],met:5.8},{name:'ウォーキング',alias:['ウォーキング','walking','早歩き'],met:3.5},{name:'ランニング',alias:['ランニング','running','ジョギング'],met:7},{name:'ローイングマシン',alias:['ローイングマシン'],met:5.0},{name:'有酸素運動',alias:['有酸素運動','cardio'],met:5.0}];
 export const exerciseCatalog=E.map(x=>({name:x.n,primary:x.p,secondary:x.s}));
@@ -100,7 +100,7 @@ export const normalizeState=(data)=>{
  const fp=data.forecastPlan||{}, rawIntake=fp.dailyIntake, rawRate=Number(fp.strengthMonthlyPct);
  const forecastPlan={dailyIntake:rawIntake===''||rawIntake==null?'':Number.isFinite(Number(rawIntake))&&Number(rawIntake)>=1000&&Number(rawIntake)<=6000?Number(rawIntake):'',
  strengthMode:['trend','flat','manual'].includes(fp.strengthMode)?fp.strengthMode:'trend',strengthMonthlyPct:Number.isFinite(rawRate)&&rawRate>=-5&&rawRate<=5?rawRate:0,exercise:String(fp.exercise||'').slice(0,180)};
- return {schemaVersion:VERSION,profile:{...defaultProfile(),...Object.fromEntries(Object.entries(data.profile).filter(([k])=>k in defaultProfile()))},logs,weights:Array.isArray(data.weights)?data.weights.slice(-30000):[],meals,vitals,pfcGoal,pfcPreset,caloriePlan:plan,forecastPlan,evaluationLevel:Object.hasOwn(EVALUATION_LEVELS,data.evaluationLevel)?data.evaluationLevel:'normal',excludedMuscles:Array.isArray(data.excludedMuscles)?[...new Set(data.excludedMuscles.filter(id=>typeof id==='string'&&(id in names||id in DETAIL_IDS)))].slice(0,100):[],updatedAt:new Date().toISOString()};
+ return {schemaVersion:VERSION,profile:{...defaultProfile(),...Object.fromEntries(Object.entries(data.profile).filter(([k])=>k in defaultProfile()))},profileHistory:Array.isArray(data.profileHistory)?data.profileHistory.filter(h=>h&&/^\d{4}-\d{2}-\d{2}$/.test(h.date)&&h.profile&&typeof h.profile==='object').slice(-30000).map(h=>({date:h.date,profile:{...defaultProfile(),...Object.fromEntries(Object.entries(h.profile).filter(([k])=>k in defaultProfile()))}})):[],logs,weights:Array.isArray(data.weights)?data.weights.slice(-30000):[],meals,vitals,pfcGoal,pfcPreset,caloriePlan:plan,forecastPlan,evaluationLevel:Object.hasOwn(EVALUATION_LEVELS,data.evaluationLevel)?data.evaluationLevel:'normal',excludedMuscles:Array.isArray(data.excludedMuscles)?[...new Set(data.excludedMuscles.filter(id=>typeof id==='string'&&(id in names||id in DETAIL_IDS)))].slice(0,100):[],updatedAt:new Date().toISOString()};
 };
 /** Merge backups from prior builds without repeating any date already recorded on this device.
  * Existing profile and records take priority; preserve multi-session days from incoming when the date is new.
@@ -116,7 +116,7 @@ export function mergeMissingDays(current,incoming){
  const mealKeys=new Set(base.meals.map(m=>m.id));
  const freshMeals=addition.meals.filter(m=>!mealKeys.has(m.id));
  const vitalKeys=new Set(base.vitals.map(v=>v.id));const freshVitals=addition.vitals.filter(v=>!vitalKeys.has(v.id));
- return {state:normalizeState({...base,logs:[...base.logs,...fresh],profile:profileIsSet?base.profile:addition.profile,weights:[...base.weights,...addition.weights.filter(w=>!weightKeys.has(w.date))],meals:[...base.meals,...freshMeals],vitals:[...base.vitals,...freshVitals],pfcGoal:base.pfcGoal,pfcPreset:base.pfcPreset,caloriePlan:base.caloriePlan,evaluationLevel:base.evaluationLevel}),added:fresh.length,skipped: addition.logs.length-fresh.length,mealsAdded:freshMeals.length,vitalsAdded:freshVitals.length};
+ return {state:normalizeState({...base,logs:[...base.logs,...fresh],profile:profileIsSet?base.profile:addition.profile,weights:[...base.weights,...addition.weights.filter(w=>!weightKeys.has(w.date))],profileHistory:[...base.profileHistory,...addition.profileHistory.filter(h=>!base.profileHistory.some(x=>x.date===h.date))],meals:[...base.meals,...freshMeals],vitals:[...base.vitals,...freshVitals],pfcGoal:base.pfcGoal,pfcPreset:base.pfcPreset,caloriePlan:base.caloriePlan,evaluationLevel:base.evaluationLevel}),added:fresh.length,skipped: addition.logs.length-fresh.length,mealsAdded:freshMeals.length,vitalsAdded:freshVitals.length};
 }
 export function validateProfile(p){const h=Number(p.height),w=Number(p.weight),age=Number(p.age);if(!Number.isFinite(h)||h<90||h>240)throw Error('身長は90〜240cmで入力してください');if(!Number.isFinite(w)||w<25||w>350)throw Error('体重は25〜350kgで入力してください');if(p.age!==''&&(!Number.isInteger(age)||age<1||age>120))throw Error('年齢を確認してください');if(p.fat!==''&&(n(p.fat)<1||n(p.fat)>70))throw Error('体脂肪率を確認してください');return true;}
 export function setsOf(log){return (log?.exercises||[]).reduce((a,e)=>a+(e.groups||[]).reduce((n,g)=>n+nSafe(g.sets),0),0)}
@@ -198,8 +198,33 @@ export function normalizeMeal(m){
  const mealType=['breakfast','lunch','dinner','snack'].includes(m.mealType)?m.mealType:'snack';
  return {id:String(m.id||uid()).slice(0,120),date,name,kcal:Math.round(kcal),...macros,mealType,notes:String(m.notes||'').slice(0,500),inputMode:['ingredients','dish','product','manual'].includes(m.inputMode)?m.inputMode:'manual',estimated:!!m.estimated,rawText:String(m.rawText||'').slice(0,4000),foodItems:Array.isArray(m.foodItems)?m.foodItems.slice(0,120).map(x=>({label:String(x.label||'').slice(0,300),food:x.food||null,grams:x.grams==null?null:Number(x.grams),source:['reference','label','manual','unknown'].includes(x.source)?x.source:'unknown',excluded:!!x.excluded,confidence:String(x.confidence||'').slice(0,30),nutrients:Object.fromEntries(['kcal','protein','fat','carbs'].map(k=>[k,x.nutrients?.[k]==null?null:Number(x.nutrients[k])]))})):[],foodParserVersion:Number(m.foodParserVersion)||null,manualOverride:!!m.manualOverride,createdAt:m.createdAt||new Date().toISOString(),updatedAt:m.updatedAt||null};
 }
+/** Date-sensitive input for historical RMR. Do not apply today's weight to an old workout
+ * when a historical weight is available; do not invent a sex or historical age/height.
+ * History recorded from v3.3 is preferred when an as-of record exists. */
+export function historicalProfileForDate(state,date){
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(Date.parse(date+'T12:00:00Z')))throw Error('日付が正しくありません');
+ const current=state.profile||defaultProfile(), today=localToday();
+ const history=(state.profileHistory||[]).filter(h=>h.date<=date).sort((a,b)=>b.date.localeCompare(a.date));
+ const base=history.length?history[0].profile:current;
+ const profile={...base};
+ // A demographic setting previously left unselected can be completed later, without changing historical weight.
+ if(profile.sex==='none' && ['male','female'].includes(current.sex))profile.sex=current.sex;
+ const candidates=[];
+ for(const x of state.weights||[])if(x.date<=date&&Number(x.weight)>0)candidates.push({date:x.date,weight:Number(x.weight),source:'weight-record',priority:2});
+ for(const x of state.logs||[])if(x.date<=date&&Number(x.weightSnapshot)>0)candidates.push({date:x.date,weight:Number(x.weightSnapshot),source:'workout-weight',priority:1});
+ candidates.sort((a,b)=>b.date.localeCompare(a.date)||b.priority-a.priority);
+ let weightSource='current-profile';
+ if(date<today&&candidates.length){profile.weight=String(candidates[0].weight);weightSource=candidates[0].source;}
+ if(date>=today){profile.weight=current.weight;weightSource='current-profile';}
+ const bodyProfileSource=history.length?'dated-profile':'current-profile-fallback';
+ return {profile,weightSource,bodyProfileSource,referenceDate:history[0]?.date||null};
+}
 export function dayCalorieBalance(state,date){
- const bmr=restingMetabolicRate(state.profile);
+ const historical=historicalProfileForDate(state,date);
+ const bmr=restingMetabolicRate(historical.profile);
+ const rmrMale=restingMetabolicRate({...historical.profile,sex:'male'});
+ const rmrFemale=restingMetabolicRate({...historical.profile,sex:'female'});
+ const rmrRange=bmr===null&&rmrMale!==null&&rmrFemale!==null?[Math.min(rmrMale,rmrFemale),Math.max(rmrMale,rmrFemale)]:null;
  const plan=validateCaloriePlan({...defaultCaloriePlan(),...(state.caloriePlan||{})});
  const sessions=(state.logs||[]).filter(l=>l.date===date);
  const spent=sessions.map(energy);
@@ -216,12 +241,13 @@ export function dayCalorieBalance(state,date){
  const intake=consumed.reduce((sum,m)=>sum+m.kcal,0);
  const macros=Object.fromEntries(['protein','fat','carbs'].map(key=>[key,consumed.some(m=>m[key]!==null)?Math.round(consumed.reduce((sum,m)=>sum+(m[key]||0),0)*10)/10:null]));
  const baseline=bmr===null?null:Math.round(bmr*plan.activityFactor);
+ const baselineRange=rmrRange?rmrRange.map(v=>Math.round(v*plan.activityFactor)):null;
  // Always compute exercise independently of BMR. Missing sex must not hide logged exercise calories.
  // The food target credits only a configurable share of NET kcal to reduce false precision.
  const exerciseAddition=Math.round(netEx*plan.exerciseCredit);
  const maintenance=baseline===null?null:baseline+exerciseAddition;
  const target=maintenance===null?null:maintenance+plan.goalAdjustment;
- return {bmr,baseline,netEx,grossEx,strengthNet,cardioNet,strengthGross,cardioGross,
+ return {bmr,baseline,rmrRange,baselineRange,profileUsed:historical.profile,weightSource:historical.weightSource,bodyProfileSource:historical.bodyProfileSource,netEx,grossEx,strengthNet,cardioNet,strengthGross,cardioGross,
   hasExerciseRecords:sessions.length>0,knownExerciseSessions:knownSessions.length,exerciseSessions:sessions.length,
   exerciseAddition,maintenance,target,intake,hasMeals:consumed.length>0,mealCount:consumed.length,
   remaining:target===null||!consumed.length?null:target-intake,macros,plan,partial:anyUnknown};

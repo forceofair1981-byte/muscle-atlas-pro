@@ -13,6 +13,20 @@ import {GOALS,parseTraining,normalizeState,emptyState,validateProfile,safeText,l
 const $=id=>document.getElementById(id),val=id=>$(id)?.value;
 let state=emptyState(),period=1,selectedMuscle=null,selectedRecoveryMuscle=null,pending=null,editingId=null,ignoreUnmatched=new Set(),activeRoute='dashboard',noticeTimer=null;
 const number=x=>Number(x)||0;
+const EXCLUSIONS_VIEW_KEY='muscle-atlas-ui-exclusions-expanded-v1';
+function setExclusionsExpanded(expanded){
+ const panel=$('exclusion-body'),button=$('exclusion-toggle');
+ if(!panel||!button)return;
+ panel.hidden=!expanded;
+ button.setAttribute('aria-expanded',String(Boolean(expanded)));
+ button.textContent=expanded?'折りたたむ ▴':'展開する ▾';
+ try{localStorage.setItem(EXCLUSIONS_VIEW_KEY,expanded?'1':'0')}catch(_e){/* Safari private-storage mode; the controls still work */}
+}
+function initExclusionsFold(){
+ let previous='0';try{previous=localStorage.getItem(EXCLUSIONS_VIEW_KEY)||'0'}catch(_e){}
+ setExclusionsExpanded(previous==='1');
+}
+
 function toast(t){const el=$('toast');el.textContent=t;el.classList.add('show');clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>el.classList.remove('show'),3300)}
 const dateText=s=>s?.replaceAll('-','/');
 const compact=n=>Math.round(n).toLocaleString('ja-JP');
@@ -156,7 +170,7 @@ async function saveForecastPlan(){
  try{state.forecastPlan=getForecastControls();await save();renderForecast();toast('未来予測の条件をこの端末に保存しました');}
  catch(e){toast(e.message)}
 }
-function energyFormat(n){return n===null?'—':Math.round(n).toLocaleString('ja-JP')}
+function energyFormat(n){return n===null?'—':typeof n==='string'?n:Math.round(n).toLocaleString('ja-JP')}
 function renderDashboardEnergy(){
  const d=dayCalorieBalance(state,localToday()),el=$('dashboard-energy-summary');
  const exerciseText=d.hasExerciseRecords?(d.knownExerciseSessions?`${energyFormat(d.netEx)}kcal（推定追加消費）`:'未算出（運動時間・体重を確認）'):'今日の運動記録なし';
@@ -165,13 +179,15 @@ function renderDashboardEnergy(){
  }
  el.innerHTML=`推定基礎代謝 <b>${energyFormat(d.bmr)}kcal</b> / 日 · 食事目標 <b>${energyFormat(d.target)}kcal</b> · 摂取 ${d.hasMeals?'<b>'+energyFormat(d.intake)+'kcal</b>（記録分）':'未記録'}<p class="fine">今日の運動による推定追加消費は ${exerciseText}、摂取目標に反映する量は ${energyFormat(d.exerciseAddition)}kcal（${Math.round(d.plan.exerciseCredit*100)}%）。</p>`;
 }
+const historicalValue=(value,range)=>value===null&&range?`${energyFormat(range[0])}〜${energyFormat(range[1])}`:energyFormat(value);
 const mealLabels={breakfast:'朝食',lunch:'昼食',dinner:'夕食',snack:'間食'};
 let editingMealId=null;
 function renderNutrition(){
  const dt=val('nutrition-date')||localToday(),d=dayCalorieBalance(state,dt);
  const exerciseKnown=d.knownExerciseSessions>0,exerciseText=exerciseKnown?d.netEx:(d.hasExerciseRecords?null:0);
  const creditedText=exerciseKnown?d.exerciseAddition:(d.hasExerciseRecords?null:0);
- for(const [id,v] of [['nutr-bmr',d.bmr],['nutr-baseline',d.baseline],['nutr-extra',exerciseText],['nutr-credited',creditedText],['nutr-target',d.target],['nutr-intake',d.hasMeals?d.intake:null],['nutr-remaining',d.remaining]])$(id).textContent=energyFormat(v);
+ const sexQuick=$('nutr-quick-sex');if(sexQuick)sexQuick.value=state.profile.sex||'none';
+ for(const [id,v] of [['nutr-bmr',historicalValue(d.bmr,d.rmrRange)],['nutr-baseline',historicalValue(d.baseline,d.baselineRange)],['nutr-extra',exerciseText],['nutr-credited',creditedText],['nutr-target',d.target],['nutr-intake',d.hasMeals?d.intake:null],['nutr-remaining',d.remaining]])$(id).textContent=energyFormat(v);
  const dateOptions=[...new Set(state.logs.map(x=>x.date))].sort((a,b)=>b.localeCompare(a));
  const nav=$('nutrition-workout-day');if(nav){nav.innerHTML='<option value="">記録日を選択</option>'+dateOptions.map(x=>`<option value="${safeText(x)}">${safeText(dateText(x))}</option>`).join('');nav.value=dateOptions.includes(dt)?dt:'';}
  const breakdown=$('nutr-exercise-breakdown');
@@ -180,7 +196,11 @@ function renderNutrition(){
  }else breakdown.innerHTML='<p class="fine">選択日にトレーニング記録はありません。上の「トレーニング記録がある日へ移動」で記録日を選択できます。</p>';
  $('nutr-progress').style.width=d.target>0&&d.hasMeals?Math.min(100,d.intake/d.target*100).toFixed(1)+'%':'0%';
  const notices=[];
- if(d.bmr===null)notices.push('基礎代謝の計算には19〜78歳の年齢・身長・体重と男性／女性の式の選択が必要です。基礎代謝未確定でも、運動消費は独立して表示します。');
+ if(d.rmrRange){notices.push('性別が未選択のため、表示した基礎代謝と日常活動込みの数値は男女の式による参考範囲です。プロフィールで式を選択すると単一の推定値になります。');}
+ if(d.bodyProfileSource==='current-profile-fallback'&&dt<localToday())notices.push('過去の年齢・身長・性別の履歴がありません。現在のプロフィールを暫定使用しています。過去時点の数値と異なる可能性があります。');
+ if(d.weightSource==='workout-weight')notices.push('選択日の基礎代謝にはトレーニング記録の体重（'+d.profileUsed.weight+'kg）を使っています。');
+ else if(d.weightSource==='weight-record')notices.push('選択日の基礎代謝には過去の体重記録（'+d.profileUsed.weight+'kg）を使っています。');
+ if(d.bmr===null&&!d.rmrRange)notices.push('基礎代謝の推定には19〜78歳の年齢・身長・体重が必要です。基礎代謝未確定でも運動消費は独立して表示します。');
  else notices.push(`計算内訳：RMR ${energyFormat(d.bmr)} × 活動係数 ${d.plan.activityFactor} ＋ 運動の安静時超過分 ${energyFormat(d.netEx)} × 反映率 ${Math.round(d.plan.exerciseCredit*100)}% ＋ 目標調整 ${d.plan.goalAdjustment>0?'+':''}${d.plan.goalAdjustment}kcal。`);
  if(!d.hasMeals)notices.push('食事未記録：摂取量と残りカロリーを表示しません。');
  else notices.push('残りは「記録済みの食事」に対する数値です。食事の入力漏れがある場合は実際の収支ではありません。');
@@ -280,7 +300,9 @@ async function deleteMeal(id){
  if(editingMealId===id)closeMealEditor();renderNutrition();renderDashboardEnergy();toast('食事記録を削除しました');
 }
 function renderSettings(){for(const k of ['height','weight','age','sex','fat','muscle','goal','level','display'])$('p-'+k).value=state.profile[k]??'';$('evaluation-level').value=state.evaluationLevel||'normal';renderExclusions();$('storage-message').textContent='保存方式：'+storageMode()+'。トレーニング・食事は端末ごとに保存。バックアップは暗号化されません。';}
-async function saveProfile(){const p={};for(const k of ['height','weight','age','sex','fat','muscle','goal','level','display'])p[k]=val('p-'+k);try{validateProfile(p);if(Number(state.profile.weight)!==Number(p.weight)){state.weights=state.weights||[];const d=localToday();const record={date:d,weight:Number(p.weight),savedAt:new Date().toISOString()};state.weights=state.weights.filter(x=>x.date!==d).concat(record);}state.profile=p;await save();renderDashboard();if(activeRoute==='nutrition')renderNutrition();toast('プロフィールを保存しました');}catch(e){toast(e.message)}}
+async function saveProfile(){const p={};for(const k of ['height','weight','age','sex','fat','muscle','goal','level','display'])p[k]=val('p-'+k);try{validateProfile(p);if(Number(state.profile.weight)!==Number(p.weight)){state.weights=state.weights||[];const d=localToday();const record={date:d,weight:Number(p.weight),savedAt:new Date().toISOString()};state.weights=state.weights.filter(x=>x.date!==d).concat(record);}state.profile=p;state.profileHistory=state.profileHistory||[];
+ const effectiveDate=localToday();state.profileHistory=state.profileHistory.filter(x=>x.date!==effectiveDate).concat({date:effectiveDate,profile:{...p}});
+ await save();renderDashboard();if(activeRoute==='nutrition')renderNutrition();toast('プロフィールを保存しました');}catch(e){toast(e.message)}}
 function download(name,content,mime){const url=URL.createObjectURL(new Blob([content],{type:mime})),a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000)}
 function exportJSON(){download('MuscleAtlasPro_Backup_'+localToday()+'.json',JSON.stringify({...state,exportedAt:new Date().toISOString(),app:'MuscleAtlasPro'},null,2),'application/json');toast('JSONバックアップを作成しました');}
 async function saveEvaluationLevel(){const v=val('evaluation-level');if(!LEVELS[v])return toast('評価基準を確認してください');const before=state.evaluationLevel;state.evaluationLevel=v;try{await save();renderDailyEvaluation();if(activeRoute==='history')renderHistory();toast('評価基準を '+LEVELS[v]+' に変更しました');}catch(e){state.evaluationLevel=before;toast('保存できませんでした')}}
@@ -432,7 +454,10 @@ async function saveVital(){try{const o=normalizeVital({id:uid(),date:val('vital-
 async function deleteVital(id){const v=state.vitals.find(x=>x.id===id);if(!v||!confirm('この測定記録を削除しますか？'))return;const old=state.vitals;state.vitals=state.vitals.filter(x=>x.id!==id);try{await save()}catch(e){state.vitals=old;throw e}renderVitals();toast('削除しました')}
 function exportVitalsCSV(){const rows=[['date','time','systolic_mmHg','diastolic_mmHg','pulse_bpm','condition','source','notes']];for(const v of state.vitals)rows.push([v.date,v.time,v.systolic??'',v.diastolic??'',v.pulse??'',v.context,v.source,v.notes]);const csv='\uFEFF'+rows.map(row=>row.map(x=>'"'+String(x??'').replace(/"/g,'""')+'"').join(',')).join('\r\n');download('MuscleAtlasPro_Vitals_'+localToday()+'.csv',csv,'text/csv;charset=utf-8');toast('血圧・心拍数CSVを作成しました')}
 function bind(){for(const selectId of ['detail-muscle-select','recovery-detail-muscle-select']){const input=$(selectId);input.innerHTML='<option value="">部位名を選ぶ</option>'+SELECTABLE_IDS.map(id=>`<option value="${id}">${safeText(displayNames[id])}</option>`).join('')} $('detail-muscle-select').addEventListener('change',e=>{selectedMuscle=e.target.value||null;renderDashboard()});$('recovery-detail-muscle-select').addEventListener('change',e=>{selectedRecoveryMuscle=e.target.value||null;renderRecovery()});document.querySelectorAll('[data-route]').forEach(x=>x.addEventListener('click',()=>route(x.dataset.route)));document.querySelectorAll('[data-days]').forEach(x=>x.addEventListener('click',()=>{period=Number(x.dataset.days);selectedMuscle=null;document.querySelectorAll('[data-days]').forEach(y=>y.classList.toggle('active',x===y));renderDashboard()}));
- $('tomorrow-base-date').addEventListener('change',renderTomorrow);$('save-excluded-muscles').addEventListener('click',saveExclusions);$('recovery-date').addEventListener('change',renderRecovery);$('evaluation-day').addEventListener('change',renderDailyEvaluation);$('save-evaluation-level').addEventListener('click',saveEvaluationLevel);
+ $('exclusion-toggle').addEventListener('click',()=>setExclusionsExpanded($('exclusion-toggle').getAttribute('aria-expanded')!=='true'));
+  document.querySelector('[data-open-exclusions]')?.addEventListener('click',()=>setExclusionsExpanded(true));
+  $('exclusion-list').addEventListener('change',()=>{const n=$('exclusion-list').querySelectorAll('input[data-exclude]:checked').length;$('exclusion-count').textContent=`${n}部位を選択（未保存）`;});
+  $('tomorrow-base-date').addEventListener('change',renderTomorrow);$('save-excluded-muscles').addEventListener('click',saveExclusions);$('recovery-date').addEventListener('change',renderRecovery);$('evaluation-day').addEventListener('change',renderDailyEvaluation);$('save-evaluation-level').addEventListener('click',saveEvaluationLevel);
  $('recovery-side').addEventListener('change',()=>{const v=val('recovery-side');$('recovery-body-grid').className='body-grid'+(v==='both'?'':' single '+v)});
  for(const id of ['recovery-front','recovery-back']){
   $(id).addEventListener('click',e=>{const node=e.target.closest('[data-muscle]');if(!node)return;selectedRecoveryMuscle=node.dataset.muscle;renderRecovery()});
@@ -457,7 +482,15 @@ function bind(){for(const selectId of ['detail-muscle-select','recovery-detail-m
  for(const id of ['meal-history-query','meal-history-period','meal-history-type','meal-history-from','meal-history-to'])$(id).addEventListener(id==='meal-history-query'?'input':'change',renderMealHistory);
  $('meal-history-list').addEventListener('click',e=>{const btn=e.target.closest('button');if(!btn)return;if(btn.dataset.editMeal)startMealEdit(btn.dataset.editMeal);else if(btn.dataset.mealGoDate){$('nutrition-date').value=btn.dataset.mealGoDate;renderNutrition();$('page-nutrition').scrollIntoView({behavior:'smooth',block:'start'})}});
  $('meal-edit-cancel').addEventListener('click',closeMealEditor);$('meal-edit-recalc').addEventListener('click',recalculateMealEditor);$('meal-edit-save').addEventListener('click',saveMealEdit);
+ $('nutr-quick-sex').addEventListener('change',async e=>{
+  const choice=e.target.value;if(!['male','female','none'].includes(choice))return;
+  const previous={...state.profile};state.profile.sex=choice;
+  const previousHistory=structuredClone(state.profileHistory||[]);
+  state.profileHistory=(state.profileHistory||[]).filter(x=>x.date!==localToday()).concat({date:localToday(),profile:{...state.profile}});
+  try{await save();renderNutrition();renderDashboard();toast('基礎代謝の計算設定を保存しました');}
+  catch(error){state.profile=previous;state.profileHistory=previousHistory;renderNutrition();toast('保存できません：'+error.message)}
+ });
  $('nutrition-date').addEventListener('change',renderNutrition);$('nutrition-workout-day').addEventListener('change',e=>{if(e.target.value){$('nutrition-date').value=e.target.value;renderNutrition()}});$('nutrition-today').addEventListener('click',()=>{$('nutrition-date').value=localToday();renderNutrition()});$('save-calorie-plan').addEventListener('click',saveCaloriePlan);$('save-meal').addEventListener('click',saveMeal);$('meal-list').addEventListener('click',e=>{const btn=e.target.closest('button');if(!btn)return;if(btn.dataset.editMeal)startMealEdit(btn.dataset.editMeal);else if(btn.dataset.deleteMeal)deleteMeal(btn.dataset.deleteMeal)});
 }
-async function init(){try{({state}=await loadStore());$('recovery-date').value=localToday();$('tomorrow-base-date').value=localToday();$('storage-status').textContent=storageMode()==='indexeddb'?'● 端末内保存（外部同期なし）':'● 端末内代替保存（外部同期なし）';bind();resetForm();setForecastControls();renderDashboard();$('nutrition-date').value=localToday();$('cal-activity').value=state.caloriePlan.activityFactor;$('cal-credit').value=state.caloriePlan.exerciseCredit;$('cal-adjust').value=state.caloriePlan.goalAdjustment;if(state.logs.length)toast(`${state.logs.length}件の記録を読み込みました`);if('serviceWorker'in navigator&&location.protocol==='https:')navigator.serviceWorker.register('./sw.js').catch(()=>{});}catch(e){$('storage-status').textContent='保存エラー';toast('起動できません：'+e.message);console.error(e)}}
+async function init(){try{({state}=await loadStore());$('recovery-date').value=localToday();$('tomorrow-base-date').value=localToday();$('storage-status').textContent=storageMode()==='indexeddb'?'● 端末内保存（外部同期なし）':'● 端末内代替保存（外部同期なし）';bind();initExclusionsFold();resetForm();setForecastControls();renderDashboard();$('nutrition-date').value=localToday();$('cal-activity').value=state.caloriePlan.activityFactor;$('cal-credit').value=state.caloriePlan.exerciseCredit;$('cal-adjust').value=state.caloriePlan.goalAdjustment;if(state.logs.length)toast(`${state.logs.length}件の記録を読み込みました`);if('serviceWorker'in navigator&&location.protocol==='https:')navigator.serviceWorker.register('./sw.js').catch(()=>{});}catch(e){$('storage-status').textContent='保存エラー';toast('起動できません：'+e.message);console.error(e)}}
 init();
