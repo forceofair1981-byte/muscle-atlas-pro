@@ -1,4 +1,4 @@
-import {names} from './catalog.js';
+import {displayNames,visualParts,displayValue} from './detail.js';
 const FRONT=[
 ['delt_front','M 94 111 Q 76 111 65 132 L 84 153 Q 102 149 104 127 Z'],
 ['delt_side','M 65 132 Q 54 145 61 170 L 80 174 L 84 153 Z'],
@@ -36,6 +36,13 @@ function silhouette(variant,back){let female=variant==='female',neutral=variant=
 export function heatColor(value, scale=1){const n=value/scale;if(!n)return '#263b52';if(n<2)return '#419de5';if(n<5)return '#50bba5';if(n<9)return '#f1b65a';return '#ef6477'}
 export function anatomySVG(side,variant,totals={},selected='',options={}){
  const front=side==='front',parts=front?FRONT:BACK;
- const shapes=parts.map(([id,d])=>[1,-1].map((m)=>`<path role="button" tabindex="0" aria-label="${names[id]}" class="muscle ${selected===id?'selected':''}" data-muscle="${id}" d="${d}" transform="${m===1?'':'translate(300 0) scale(-1 1)'}" fill="${options.colors?.[id]||heatColor(totals[id]||0)}"><title>${options.titles?.[id]||names[id]+' '+(totals[id]||0).toFixed(1)+'セット相当'}</title></path>`).join('')).join('');
- return `<svg viewBox="0 0 300 615" class="muscle-svg" role="group" aria-label="${variant==='female'?'女性':variant==='male'?'男性':'中立'}モデルの${front?'前面':'後面'}筋肉マップ">${silhouette(variant,!front)}${shapes}<path class="sil-detail" d="M141 20 Q150 11 160 20 M135 82 L142 95 M165 82 L158 95" /></svg>`;
+ const segments=parts.flatMap(([base,path])=>visualParts(base,path));
+ const prefix=(options.prefix||'map')+'-'+(front?'f':'b');
+ const masks=segments.filter(x=>x.rect).map((x,i)=>`<clipPath id="${prefix}-${x.id}"><rect x="${x.rect.x}" y="${x.rect.y}" width="${x.rect.w}" height="${x.rect.h}"/></clipPath>`).join('');
+ const shapes=segments.map(({id,base,path,rect})=>[1,-1].map(m=>{
+  const amount=displayValue(id,totals),color=options.colors?.[id]||options.colors?.[base]||heatColor(totals[base]||0);
+  const title=options.titles?.[id]||options.titles?.[base]||`${displayNames[id]}：${amount.toFixed(1)}セット相当（推定割当）`;
+  return `<path role="button" tabindex="0" aria-label="${displayNames[id]}" class="muscle ${selected===id?'selected':''}" data-muscle="${id}" d="${path}" ${rect?`clip-path="url(#${prefix}-${id})"`:''} transform="${m===1?'':'translate(300 0) scale(-1 1)'}" fill="${color}"><title>${title}</title></path>`;
+ }).join('')).join('');
+ return `<svg viewBox="0 0 300 615" class="muscle-svg" role="group" aria-label="${variant==='female'?'女性':variant==='male'?'男性':'中立'}モデルの${front?'前面':'後面'}筋肉マップ">${silhouette(variant,!front)}<defs>${masks}</defs>${shapes}<path class="sil-detail" d="M141 20 Q150 11 160 20 M135 82 L142 95 M165 82 L158 95" /></svg>`;
 }

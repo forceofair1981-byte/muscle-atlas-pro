@@ -108,3 +108,40 @@
 .nutrition-exercise-breakdown>.fine{grid-column:1/-1;margin:0 8px 5px}
 @media(max-width:850px){.nutrition-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:420px){.nutrition-exercise-breakdown{grid-template-columns:1fr}.nutrition-exercise-breakdown>div{padding:3px 8px}.nutrition-exercise-breakdown strong{font-size:18px}}
+
+/* Daily evaluation v3.0 */
+.evaluation-panel{margin-bottom:18px;background:linear-gradient(140deg,#17334b,#111e33)}
+.evaluation-top{display:flex;align-items:center;gap:20px;flex-wrap:wrap;padding:16px;border-radius:14px;background:#0d2034;border:1px solid #294760}
+.evaluation-score{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:102px}
+.evaluation-score strong{font-size:43px;line-height:1;font-variant-numeric:tabular-nums;color:#71dabb}
+.evaluation-score small{font-size:10px;color:var(--muted);margin-top:5px}
+.evaluation-top h4{margin:8px 0 5px;font-size:19px}.evaluation-top p{margin:0;font-size:12px;color:var(--muted);line-height:1.7}
+.evaluation-level-chip{display:inline-block;font-weight:800;color:#b3e8d9;border:1px solid #2e766d;background:#123a41;padding:5px 9px;border-radius:99px;font-size:11px}
+.evaluation-summary{display:flex;gap:8px;flex-wrap:wrap;margin:13px 0}.evaluation-summary span{background:#203b53;border:1px solid #36506b;border-radius:8px;padding:7px 11px;font-size:12px}
+.evaluation-issues{padding:0;margin:13px 0;list-style:none;display:grid;gap:9px}
+.evaluation-issues li{padding:12px;border:1px solid #36536d;background:#11263b;border-radius:10px;font-size:12px;line-height:1.65}
+.evaluation-issues li[data-severity="high"]{border-left:4px solid #ef7b88}.evaluation-issues li[data-severity="caution"]{border-left:4px solid #efc05c}.evaluation-issues li[data-severity="info"]{border-left:4px solid #6baefe}
+.evaluation-issues li small{display:block;margin-top:4px;color:#a7c8dc;line-height:1.65}
+.setting-field{display:flex;flex-direction:column;gap:9px;font-size:12px;font-weight:700;color:#b7cddf}
+
+/* v3.1 - 14-day next workout recommendation and granular anatomy */
+.tomorrow-panel{margin:0 0 20px;background:linear-gradient(155deg,#112a40,#122039);border:1px solid #34617a}
+.tomorrow-panel h3{font-size:19px}.tomorrow-panel p{line-height:1.7}
+.tomorrow-metrics{display:flex;flex-wrap:wrap;gap:10px;margin:13px 0}
+.tomorrow-metrics span{padding:8px 12px;background:#0a2239;border:1px solid #2c516c;border-radius:10px;color:#b8d0e7;font-size:12px}
+.tomorrow-metrics b{font-size:16px;color:#69d5bf;margin-left:5px}
+.tomorrow-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:13px;margin:14px 0}
+.tomorrow-card{border:1px solid #33667f;background:linear-gradient(155deg,#17334b,#0e2439);padding:15px;border-radius:15px}
+.tomorrow-card-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.tomorrow-card h4{margin:4px 0;color:#ebfbff;font-size:17px}
+.tomorrow-card p{font-size:12px;color:#a7c9d8}.tomorrow-card ul{padding:0;margin:12px 0 16px;display:grid;gap:8px;list-style:none}
+.tomorrow-card li{padding:10px;border-radius:10px;border:1px solid #38526c;background:#0f2940}
+.tomorrow-card li b{font-size:13px}.tomorrow-card li small{display:block;color:#a3bccf;margin-top:5px;line-height:1.4}
+.warning-inline{background:#372a32;color:#ffd2d3;padding:12px;border-radius:12px;border:1px solid #704857;font-size:13px;line-height:1.6}
+.exclusion-list{display:grid;gap:12px;margin:16px 0}.exclude-group{border:1px solid #38506d;border-radius:12px;padding:13px 10px;background:#0f1f34;min-width:0}
+.exclude-group legend{padding:0 8px;color:#85dfce;font-size:13px;font-weight:800}
+.exclude-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(152px,1fr));gap:8px}
+.exclude-option{display:flex;align-items:center;gap:8px;background:#182c43;padding:9px;border:1px solid #324b66;border-radius:9px;font-size:11px;color:#e1ebfc;cursor:pointer;line-height:1.5}
+.exclude-option input{flex:0 0 auto;width:18px;height:18px;accent-color:#5bb6e5}.exclude-option.sub{background:#1b3041;border-style:dashed}
+@media(max-width:440px){.exclude-options{grid-template-columns:repeat(2,minmax(0,1fr))}.exclude-option{font-size:10px;word-break:break-word}.tomorrow-cards{grid-template-columns:1fr}}
+
+.detail-selector{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0 14px;padding:10px 12px;border:1px solid #356081;background:#0f283d;border-radius:11px;color:#c8e0f2;font-size:11px;font-weight:700}.detail-selector select{max-width:66%;min-width:150px;background:#152c46;color:#e2f6ff;border:1px solid #4c6984;border-radius:8px;padding:9px 10px;font-size:13px} @media(max-width:430px){.detail-selector{flex-wrap:wrap}.detail-selector select{max-width:100%;width:100%}}
