@@ -1,5 +1,6 @@
 import {E,names} from './catalog.js';
 import {anatomySVG} from './anatomy.js';
+import {forecastScenario,normalizeForecastSettings} from './forecast.js';
 import {loadStore,saveStore,clearStore,storageMode} from './db.js';
 import {GOALS,parseTraining,normalizeState,emptyState,validateProfile,safeText,localToday,uid,setsOf,tonnage,bestE1RM,energy,summary,filterPeriod,feedback,mergeMissingDays,exerciseCatalog,restingMetabolicRate,validateCaloriePlan,normalizeMeal,dayCalorieBalance,recoveryForecast} from './engine.js';
 const $=id=>document.getElementById(id),val=id=>$(id)?.value;
@@ -68,7 +69,36 @@ function svgChart(points,{suffix='',color='#5ee1bd',bar=false}={}){if(!points.le
  else {content+=`<polyline class="path" points="${points.map((p,i)=>`${x(i)},${y(p.value)}`).join(' ')}" stroke="${color}"/>`+points.map((p,i)=>`<circle class="marker" cx="${x(i)}" cy="${y(p.value)}" r="4"><title>${safeText(p.label)} ${p.value}${suffix}</title></circle>`).join('')}
  const indices=points.length<=4?points.map((_,i)=>i):[0,Math.floor((points.length-1)/2),points.length-1];content+=indices.map(i=>`<text class="axis-text" x="${x(i)}" y="${h-9}" text-anchor="middle">${safeText(points[i].label.slice(5))}</text>`).join('');return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${safeText(points.map(p=>p.label+': '+p.value+suffix).join('、'))}">${content}</svg>`;}
 function renderProgress(){const logs=[...state.logs].sort((a,b)=>a.date.localeCompare(b.date));$('tonnage-chart').innerHTML=svgChart(logs.slice(-20).map(l=>({label:l.date,value:tonnage(l)})),{suffix:'kg',bar:true});const ex=[...new Set(logs.flatMap(l=>l.exercises.map(e=>e.name)))];const chooser=$('e1rm-exercise'),old=chooser.value;chooser.innerHTML=ex.map(x=>`<option value="${safeText(x)}">${safeText(x)}</option>`).join('');const eligible=ex.find(name=>logs.some(l=>bestE1RM(l,name)!==null));chooser.value=ex.includes(old)&&logs.some(l=>bestE1RM(l,old)!==null)?old:(eligible||ex[0]||'');const name=chooser.value;const strength=logs.map(l=>({label:l.date,value:bestE1RM(l,name)})).filter(x=>x.value!==null);$('e1rm-chart').innerHTML=svgChart(strength.slice(-20),{suffix:'kg'});const weights=state.weights||[];$('weight-chart').innerHTML=svgChart(weights.slice(-20).map(w=>({label:w.date||localToday(),value:Number(w.weight)||0})),{suffix:'kg'});
- const week={};for(const l of logs){const d=new Date(l.date+'T12:00:00'),monday=new Date(d);monday.setDate(d.getDate()-(d.getDay()+6)%7);const k=localToday(monday);week[k]=(week[k]||0)+setsOf(l)}$('weekly-chart').innerHTML=svgChart(Object.entries(week).slice(-16).map(([label,value])=>({label,value})),{suffix:'set',bar:true});}
+ const week={};for(const l of logs){const d=new Date(l.date+'T12:00:00'),monday=new Date(d);monday.setDate(d.getDate()-(d.getDay()+6)%7);const k=localToday(monday);week[k]=(week[k]||0)+setsOf(l)}$('weekly-chart').innerHTML=svgChart(Object.entries(week).slice(-16).map(([label,value])=>({label,value})),{suffix:'set',bar:true});renderForecast();}
+function setForecastControls(){
+ const plan=state.forecastPlan||{};
+ $('forecast-intake').value=plan.dailyIntake===''||plan.dailyIntake==null?'':plan.dailyIntake;
+ $('forecast-mode').value=plan.strengthMode||'trend';
+ $('forecast-rate').value=plan.strengthMonthlyPct??0;
+ $('forecast-exercise').dataset.saved=plan.exercise||'';
+}
+function getForecastControls(){return normalizeForecastSettings({dailyIntake:val('forecast-intake'),strengthMode:val('forecast-mode'),strengthMonthlyPct:val('forecast-rate'),exercise:val('forecast-exercise')})}
+function renderForecast(){
+ const el=$('forecast-exercise');if(!el)return;
+ const namesForStrength=[...new Set(state.logs.flatMap(l=>l.exercises.map(ex=>ex.name)))].filter(name=>state.logs.some(l=>bestE1RM(l,name)!==null));
+ const current=el.value||el.dataset.saved||state.forecastPlan?.exercise||'';
+ el.innerHTML=namesForStrength.length?namesForStrength.map(x=>`<option value="${safeText(x)}">${safeText(x)}</option>`).join(''):'<option value="">種目の重量記録なし</option>';
+ el.value=namesForStrength.includes(current)?current:namesForStrength[0]||'';
+ $('forecast-rate-label').hidden=val('forecast-mode')!=='manual';
+ let forecast;
+ try{forecast=forecastScenario(state,getForecastControls());}
+ catch(e){$('forecast-context').textContent='入力値を確認してください：'+e.message;return;}
+ const f=forecast,fmt=(v,d=1)=>v===null?'—':Number(v).toFixed(d);
+ $('forecast-context').textContent=`過去7日：${f.sessionsInWeek}セッション。運動による平均追加消費 ≈ ${f.averageNet}kcal/日（推定）。${f.maintenance!==null?'推定維持量 ≈ '+f.maintenance+'kcal/日。':'基礎代謝の推定にはプロフィールの性別が必要です。'} ${f.strength.base!==null?'選択種目の直近推定1RM '+f.strength.base+'kg。':'1RM記録がありません。'}`;
+ $('forecast-rows').innerHTML=f.results.map(v=>`<tr><th scope="row">${v.days}日後<small>${safeText(v.date)}</small></th><td>${fmt(v.weight)}${v.weightRange?`<small>参考幅 ${fmt(v.weightRange[0])}〜${fmt(v.weightRange[1])}</small>`:''}</td><td>${fmt(v.bodyFat)}${v.bodyFatRange?`<small>参考幅 ${fmt(v.bodyFatRange[0])}〜${fmt(v.bodyFatRange[1])}</small>`:''}</td><td>${fmt(v.e1rm)}${v.e1rmRange?`<small>参考幅 ${fmt(v.e1rmRange[0])}〜${fmt(v.e1rmRange[1])}</small>`:''}</td></tr>`).join('');
+ $('forecast-weight-chart').innerHTML=svgChart((f.profile.weight!==null?[{label:f.asOf,value:f.profile.weight}]:[]).concat(f.results.filter(x=>x.weight!==null).map(x=>({label:x.date,value:x.weight}))),{suffix:'kg'});
+ $('forecast-rm-chart').innerHTML=svgChart((f.strength.base!==null?[{label:f.asOf,value:f.strength.base}]:[]).concat(f.results.filter(x=>x.e1rm!==null).map(x=>({label:x.date,value:x.e1rm}))),{suffix:'kg'});
+ $('forecast-notes').innerHTML=f.notes.map(n=>`<p>• ${safeText(n)}</p>`).join('');
+}
+async function saveForecastPlan(){
+ try{state.forecastPlan=getForecastControls();await save();renderForecast();toast('未来予測の条件をこの端末に保存しました');}
+ catch(e){toast(e.message)}
+}
 function energyFormat(n){return n===null?'—':Math.round(n).toLocaleString('ja-JP')}
 function renderDashboardEnergy(){
  const d=dayCalorieBalance(state,localToday()),el=$('dashboard-energy-summary');
@@ -148,10 +178,10 @@ async function importJSON(file){
    const oldState=state;try{state=data;await save()}catch(e){state=oldState;throw e}
    toast(`${data.logs.length}件を復元しました`);
   }else throw Error('取り込み方法を選択してください');
-  pending=null;renderSettings();$('cal-activity').value=state.caloriePlan.activityFactor;$('cal-credit').value=state.caloriePlan.exerciseCredit;$('cal-adjust').value=state.caloriePlan.goalAdjustment;renderDashboard();renderHistory();renderProgress();renderNutrition();
+  pending=null;renderSettings();setForecastControls();$('cal-activity').value=state.caloriePlan.activityFactor;$('cal-credit').value=state.caloriePlan.exerciseCredit;$('cal-adjust').value=state.caloriePlan.goalAdjustment;renderDashboard();renderHistory();renderProgress();renderNutrition();
  }catch(e){toast('復元に失敗：'+e.message)}finally{$('import-json').value=''}
 }
-async function clearAll(){if(!confirm('すべての筋トレ履歴・身体プロフィールを削除します。続けますか？'))return;const word=prompt('完全削除するには「削除」と入力してください');if(word!=='削除')return;state=await clearStore();resetForm();renderSettings();$('cal-activity').value=state.caloriePlan.activityFactor;$('cal-credit').value=state.caloriePlan.exerciseCredit;$('cal-adjust').value=state.caloriePlan.goalAdjustment;renderDashboard();renderNutrition();toast('端末内のデータを削除しました');}
+async function clearAll(){if(!confirm('すべての筋トレ履歴・身体プロフィールを削除します。続けますか？'))return;const word=prompt('完全削除するには「削除」と入力してください');if(word!=='削除')return;state=await clearStore();resetForm();renderSettings();setForecastControls();$('cal-activity').value=state.caloriePlan.activityFactor;$('cal-credit').value=state.caloriePlan.exerciseCredit;$('cal-adjust').value=state.caloriePlan.goalAdjustment;renderDashboard();renderNutrition();toast('端末内のデータを削除しました');}
 function bind(){document.querySelectorAll('[data-route]').forEach(x=>x.addEventListener('click',()=>route(x.dataset.route)));document.querySelectorAll('[data-days]').forEach(x=>x.addEventListener('click',()=>{period=Number(x.dataset.days);selectedMuscle=null;document.querySelectorAll('[data-days]').forEach(y=>y.classList.toggle('active',x===y));renderDashboard()}));
  $('recovery-date').addEventListener('change',renderRecovery);
  $('recovery-side').addEventListener('change',()=>{const v=val('recovery-side');$('recovery-body-grid').className='body-grid'+(v==='both'?'':' single '+v)});
@@ -168,8 +198,8 @@ function bind(){document.querySelectorAll('[data-route]').forEach(x=>x.addEventL
  $('preview-exercises').addEventListener('click',e=>{let t=e.target;if(!pending)return;if(t.dataset.removeEx!==undefined){pending.exercises.splice(Number(t.dataset.removeEx),1);renderPreview()}else if(t.dataset.removeGroup!==undefined){const [i,j]=t.dataset.removeGroup.split(':').map(Number);pending.exercises[i].groups.splice(j,1);renderPreview()}else if(t.dataset.addGroup!==undefined){const e=pending.exercises[Number(t.dataset.addGroup)],last=e.groups[e.groups.length-1]||{weight:null,reps:10,sets:1,rir:null};e.groups.push({...last,sets:1});renderPreview()}});
  $('preview-unmatched').addEventListener('change',e=>{if(e.target.dataset.ignore===undefined)return;const id=Number(e.target.dataset.ignore);if(e.target.checked)ignoreUnmatched.add(id);else ignoreUnmatched.delete(id)});
  $('history-query').addEventListener('input',renderHistory);$('history-list').addEventListener('click',e=>{const t=e.target.closest('button');if(!t)return;if(t.dataset.edit)editLog(t.dataset.edit);else if(t.dataset.delete)deleteLog(t.dataset.delete)});
- $('e1rm-exercise').addEventListener('change',renderProgress);$('save-profile').addEventListener('click',saveProfile);$('export-json').addEventListener('click',exportJSON);$('export-csv').addEventListener('click',exportCSV);$('export-meals-csv').addEventListener('click',exportMealsCSV);$('import-json').addEventListener('change',e=>importJSON(e.target.files[0]));$('clear-data').addEventListener('click',clearAll);
+ $('e1rm-exercise').addEventListener('change',renderProgress);$('forecast-calc').addEventListener('click',renderForecast);$('forecast-mode').addEventListener('change',renderForecast);$('forecast-exercise').addEventListener('change',renderForecast);$('forecast-save').addEventListener('click',saveForecastPlan);$('save-profile').addEventListener('click',saveProfile);$('export-json').addEventListener('click',exportJSON);$('export-csv').addEventListener('click',exportCSV);$('export-meals-csv').addEventListener('click',exportMealsCSV);$('import-json').addEventListener('change',e=>importJSON(e.target.files[0]));$('clear-data').addEventListener('click',clearAll);
  $('nutrition-date').addEventListener('change',renderNutrition);$('save-calorie-plan').addEventListener('click',saveCaloriePlan);$('save-meal').addEventListener('click',saveMeal);$('meal-list').addEventListener('click',e=>{const btn=e.target.closest('[data-delete-meal]');if(btn)deleteMeal(btn.dataset.deleteMeal)});
 }
-async function init(){try{({state}=await loadStore());$('recovery-date').value=localToday();$('storage-status').textContent=storageMode()==='indexeddb'?'● 端末内保存（外部同期なし）':'● 端末内代替保存（外部同期なし）';bind();resetForm();renderDashboard();$('nutrition-date').value=localToday();$('cal-activity').value=state.caloriePlan.activityFactor;$('cal-credit').value=state.caloriePlan.exerciseCredit;$('cal-adjust').value=state.caloriePlan.goalAdjustment;if(state.logs.length)toast(`${state.logs.length}件の記録を読み込みました`);if('serviceWorker'in navigator&&location.protocol==='https:')navigator.serviceWorker.register('./sw.js').catch(()=>{});}catch(e){$('storage-status').textContent='保存エラー';toast('起動できません：'+e.message);console.error(e)}}
+async function init(){try{({state}=await loadStore());$('recovery-date').value=localToday();$('storage-status').textContent=storageMode()==='indexeddb'?'● 端末内保存（外部同期なし）':'● 端末内代替保存（外部同期なし）';bind();resetForm();setForecastControls();renderDashboard();$('nutrition-date').value=localToday();$('cal-activity').value=state.caloriePlan.activityFactor;$('cal-credit').value=state.caloriePlan.exerciseCredit;$('cal-adjust').value=state.caloriePlan.goalAdjustment;if(state.logs.length)toast(`${state.logs.length}件の記録を読み込みました`);if('serviceWorker'in navigator&&location.protocol==='https:')navigator.serviceWorker.register('./sw.js').catch(()=>{});}catch(e){$('storage-status').textContent='保存エラー';toast('起動できません：'+e.message);console.error(e)}}
 init();

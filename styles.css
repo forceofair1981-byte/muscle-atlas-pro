@@ -29,3 +29,22 @@
 .recovery-entry[data-state="caution"] b{color:#f3c35c}
 .recovery-entry[data-state="warning"] b{color:#ff8c96}
 @media(max-width:480px){.recovery-panel .section-head{align-items:start}.recovery-legend{gap:8px;font-size:11px}.recovery-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Future projection (conditional, locally computed) – v2.4 */
+.forecast-panel{border-color:#356073;background:linear-gradient(145deg,#132a41,#0e1e32)}
+.forecast-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:15px 0}
+.forecast-controls label{color:#a6c3d7;font-size:12px;display:flex;flex-direction:column;gap:7px;font-weight:700}
+.forecast-controls .subselect{max-width:none;width:100%;font-size:14px;padding:11px}
+.forecast-context{font-size:12px;color:#a6dbd8;line-height:1.8;margin:18px 0;padding:14px;border:1px solid #3a626c;border-radius:12px;background:#112f42}
+.forecast-table-wrap{overflow-x:auto;margin:13px 0}
+.forecast-table{width:100%;border-collapse:collapse;min-width:400px;font-variant-numeric:tabular-nums}
+.forecast-table th,.forecast-table td{padding:15px 9px;border-bottom:1px solid #324962;text-align:right;vertical-align:top}
+.forecast-table th:first-child{text-align:left;color:#b9eadd}.forecast-table thead th{font-size:11px;color:#9db7ca}
+.forecast-table td{font-size:17px;font-weight:800}.forecast-table small{display:block;font-size:10px;font-weight:400;color:#93b0c9;margin-top:7px;white-space:nowrap}
+.forecast-charts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:20px 0}
+.forecast-charts>div{background:#0a1c30;border:1px solid #284258;border-radius:13px;padding:13px;min-width:0}
+.forecast-charts h4{font-size:12px;margin:0 0 8px;color:#b1ccdf}
+.forecast-notes p{font-size:11px;line-height:1.7;color:#b0c5d7;margin:4px 0}
+@media(max-width:650px){.forecast-controls,.forecast-charts{grid-template-columns:1fr}.forecast-table td{font-size:15px}.forecast-table th,.forecast-table td{padding:11px 6px}}
+
+.forecast-controls label[hidden]{display:none}
