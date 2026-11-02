@@ -60,7 +60,10 @@ function viewLogs(){return filterPeriod(state.logs,period)}
 function renderDashboard(){const logs=viewLogs(),v=summary(logs),p=state.profile;
  $('m-sessions').textContent=v.sessions;$('m-sets').textContent=compact(v.sets);$('m-tonnage').textContent=compact(v.tonnage);$('m-energy').textContent=v.totalEnergy===null?'—':compact(v.totalEnergy)+(v.partial?'*':'');
  $('profile-summary').textContent=(p.weight||'—')+' kg · '+(p.height||'—')+' cm · '+(p.sex==='male'?'男性':p.sex==='female'?'女性':'中立')+' · '+(GOALS[p.goal]||'未設定');
- const model=p.display==='auto'?(p.sex==='none'?'neutral':p.sex):p.display;const dashboardPose=dominantPoseFromTotals(v.muscles,selectedMuscle);
+ const model=p.display==='auto'?(p.sex==='none'?'neutral':p.sex):p.display;
+ const recent=filterPeriod(state.logs,14),latestDay=recent.map(x=>x.date).sort().at(-1);
+ const poseSource=Object.values(v.muscles).some(x=>Number(x)>0)?v.muscles:(latestDay?summary(recent.filter(l=>l.date===latestDay)).muscles:{});
+ const dashboardPose=val('heat-pose')==='auto'?dominantPoseFromTotals(poseSource,selectedMuscle):val('heat-pose');
  $('svg-front').innerHTML=anatomySVG('front',model,v.muscles,selectedMuscle,{prefix:'heat',pose:dashboardPose});$('svg-back').innerHTML=anatomySVG('back',model,v.muscles,selectedMuscle,{prefix:'heat',pose:dashboardPose});$('detail-muscle-select').value=selectedMuscle||'';
  const order=Object.entries(v.muscles).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);$('muscle-ranking').innerHTML=order.length?order.slice(0,8).map(([k,v])=>`<div class="barline"><span>${safeText(names[k])}</span><span class="bar-bg"><span class="bar-inner" style="display:block;width:${Math.min(100,v/Math.max(order[0][1],1)*100).toFixed(0)}%"></span></span><b>${v.toFixed(1)}</b></div>`).join('')+'<p class="fine">直接1.0、補助0.5のセット相当値。部位間で重複します。</p>':'<div class="empty">トレーニングを追加すると部位別の分布が表示されます。</div>';
  renderDashboardEnergy();renderDailyEvaluation();renderRecovery();renderTomorrow();
@@ -103,7 +106,7 @@ function renderRecovery(){
   titles[id]=`${x.name}：${x.statusLabel}、残り休養目安 ${x.remainingDays}日${x.hasRecord?'':'（記録なし）'}`;
   recoveryPoseTotals[id]=x.lastExposure||0;
  }
- const recoveryPose=dominantPoseFromTotals(recoveryPoseTotals,selectedRecoveryMuscle);
+ const recoveryPose=val('recovery-pose')==='auto'?dominantPoseFromTotals(recoveryPoseTotals,selectedRecoveryMuscle):val('recovery-pose');
  for(const side of ['front','back'])$("recovery-"+side).innerHTML=anatomySVG(side,model,{},selectedRecoveryMuscle,{colors,titles,prefix:'recovery',pose:recoveryPose});
  $('recovery-summary').innerHTML=[['warning','警告'],['caution','注意'],['ready','記録上は可']].map(([status,label])=>`<div class="recovery-stat"><small>${label}</small><strong style="color:${recoveryPalette[status]}">${f.counts[status]}<small>部位</small></strong></div>`).join('');
  const active=Object.values(f.items).filter(x=>x.hasRecord).sort((a,b)=>b.remainingDays-a.remainingDays||b.lastDate.localeCompare(a.lastDate)||a.name.localeCompare(b.name));
@@ -489,6 +492,7 @@ function bind(){for(const selectId of ['detail-muscle-select','recovery-detail-m
   $(id).addEventListener('click',e=>{const node=e.target.closest('[data-muscle]');if(!node)return;selectedRecoveryMuscle=node.dataset.muscle;renderRecovery()});
   $(id).addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.matches('[data-muscle]')){e.preventDefault();selectedRecoveryMuscle=e.target.dataset.muscle;renderRecovery()}});
  }
+ $('heat-pose').addEventListener('change',renderDashboard);$('recovery-pose').addEventListener('change',renderRecovery);
  $('map-side').addEventListener('change',()=>{const v=val('map-side');$('body-grid').className='body-grid'+(v==='both'?'':' single '+v)});
  for(const id of ['svg-front','svg-back'])$(id).addEventListener('click',e=>{const node=e.target.closest('[data-muscle]');if(!node)return;selectedMuscle=node.dataset.muscle;renderDashboard()});
  for(const id of ['svg-front','svg-back'])$(id).addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.matches('[data-muscle]')){e.preventDefault();selectedMuscle=e.target.dataset.muscle;renderDashboard()}});
