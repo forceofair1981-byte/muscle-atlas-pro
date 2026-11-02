@@ -29,14 +29,17 @@ export const parseTraining=(text)=>{
   if(time){meta.minutes=round(Number(time[1])*(time[2]==='時間'?60:1),10);continue}
   const rest=norm.match(/^(?:セット間(?:休憩)?|インターバル)\s*[:：]?\s*(\d+(?:\.\d+)?)\s*(時間|分|秒)/);
   if(rest){meta.restMinutes=round(Number(rest[1])*(rest[2]==='時間'?60:rest[2]==='秒'?1/60:1),100);continue}
-  const match=alias.find(x=>norm.includes(x.a))||cardioCatalog.find(c=>c.alias.some(a=>norm.includes(a)));
+  const exerciseMatch=alias.find(x=>norm.includes(x.a));
+  const cardioMatch=exerciseMatch?null:cardioCatalog.find(c=>c.alias.some(a=>norm.includes(a)));
+  const match=exerciseMatch||cardioMatch;
   const nxt=lines[i+1]||'';
   if(match&&/^\d+(?:\.\d+)?/.test(clean(nxt))&&/(?:kg|キロ|rep|回|set|セット|km|分|傾斜|度|%)/i.test(clean(nxt))){chunks.push(raw+' '+nxt);i++}else chunks.push(raw);
  }
  const exercises=[],cardio=[],unmatched=[];
  for(const raw of chunks){
   const line=clean(raw).replace(/^[・•*\-]+\s*/,'').replace(/^\d+[.、)]\s*/,'');
-  const ca=cardioCatalog.find(c=>c.alias.some(a=>line.includes(a)));
+  const exAlias=alias.find(x=>line.includes(x.a));
+  const ca=exAlias?null:cardioCatalog.find(c=>c.alias.some(a=>line.includes(a)));
   if(ca){
    const mt=line.match(/(\d+(?:\.\d+)?)\s*分/),ht=line.match(/(\d+(?:\.\d+)?)\s*時間/),km=line.match(/(\d+(?:\.\d+)?)\s*km(?!\s*\/\s*h)/i),speed=line.match(/(\d+(?:\.\d+)?)\s*km\s*\/\s*h/i),incl=line.match(/(\d+(?:\.\d+)?)\s*(%|度)\s*(?:傾斜)?/);
    let minutes=mt?n(mt[1]):ht?60*n(ht[1]):null;
@@ -52,7 +55,7 @@ export const parseTraining=(text)=>{
    if(needsReview)warnings.push(`「${ca.name}」は時間・速度・勾配の単位を確認してください。未確定分は消費量に含めません。`);
    cardio.push({id:uid(),name:ca.name,minutes:minutes??null,speedKmh,distanceKm,grade,gradeUnit,met:needsReview?null:met,needsReview,raw});continue;
   }
-  const e=alias.find(x=>line.includes(x.a))?.e;
+  const e=exAlias?.e||alias.find(x=>line.includes(x.a))?.e;
   if(!e){unmatched.push({raw,reason:'種目名を識別できません'});continue}
   const wt=[...line.matchAll(/(\d+(?:\.\d+)?)\s*(?:kg|キロ)/gi)];
   const portions=wt.length?wt.map((w,i)=>({weight:n(w[1]),text:line.slice(w.index+w[0].length,i+1<wt.length?wt[i+1].index:line.length)})):[{weight:null,text:line}];

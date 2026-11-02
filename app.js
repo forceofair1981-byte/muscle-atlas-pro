@@ -30,14 +30,38 @@ function initExclusionsFold(){
 function toast(t){const el=$('toast');el.textContent=t;el.classList.add('show');clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>el.classList.remove('show'),3300)}
 const dateText=s=>s?.replaceAll('-','/');
 const compact=n=>Math.round(n).toLocaleString('ja-JP');
+const POSE_GROUPS={
+ chest:['chest_up','chest','serratus'],
+ shoulders:['delt_front','delt_side','delt_rear','traps_upper'],
+ back:['lats','traps_mid','traps_lower','erectors','traps_upper'],
+ legs:['quads','adductors','glutes','glute_med','hamstrings','gastrocnemius','soleus','tibialis'],
+ arms:['biceps','brachialis','triceps','forearm_front','forearm_back'],
+ core:['abs_upper','abs_lower','obliques','hip_flexor']
+};
+function musclePoseCategory(id){
+ const base=baseOf(id);
+ if(POSE_GROUPS.chest.includes(base))return 'chest';
+ if(POSE_GROUPS.shoulders.includes(base))return 'shoulders';
+ if(POSE_GROUPS.back.includes(base))return 'back';
+ if(POSE_GROUPS.legs.includes(base))return 'legs';
+ if(POSE_GROUPS.arms.includes(base))return 'arms';
+ if(POSE_GROUPS.core.includes(base))return 'core';
+ return 'balanced';
+}
+function dominantPoseFromTotals(totals={},selectedId=''){
+ if(selectedId)return musclePoseCategory(selectedId);
+ const scores=Object.fromEntries(Object.entries(POSE_GROUPS).map(([k,ids])=>[k,ids.reduce((sum,id)=>sum+(Number(totals[id])||0),0)]));
+ const ranked=Object.entries(scores).sort((a,b)=>b[1]-a[1]);
+ return ranked[0]&&ranked[0][1]>0?ranked[0][0]:'balanced';
+}
 function route(name){if(!['dashboard','record','history','progress','nutrition','vitals','settings'].includes(name))return;activeRoute=name;for(const el of document.querySelectorAll('.page'))el.classList.toggle('active',el.id==='page-'+name);for(const el of document.querySelectorAll('[data-route]'))el.classList.toggle('active',el.dataset.route===name);$('page-title').textContent={dashboard:'ダッシュボード',record:'トレーニング記録',history:'トレーニング履歴',progress:'成長・分析',nutrition:'カロリー管理',vitals:'血圧・心拍数',settings:'設定・データ'}[name];if(name==='dashboard')renderDashboard();if(name==='history')renderHistory();if(name==='progress')renderProgress();if(name==='nutrition')renderNutrition();if(name==='vitals')renderVitals();if(name==='settings')renderSettings();window.scrollTo({top:0,behavior:'instant'});}
 function save(){return saveStore(state).then(v=>{state=v;$('storage-status').textContent=storageMode()==='indexeddb'?'● IndexedDB・端末内保存':'● 代替保存（端末内）';return v}).catch(e=>{toast('保存失敗：'+e.message);throw e});}
 function viewLogs(){return filterPeriod(state.logs,period)}
 function renderDashboard(){const logs=viewLogs(),v=summary(logs),p=state.profile;
  $('m-sessions').textContent=v.sessions;$('m-sets').textContent=compact(v.sets);$('m-tonnage').textContent=compact(v.tonnage);$('m-energy').textContent=v.totalEnergy===null?'—':compact(v.totalEnergy)+(v.partial?'*':'');
  $('profile-summary').textContent=(p.weight||'—')+' kg · '+(p.height||'—')+' cm · '+(p.sex==='male'?'男性':p.sex==='female'?'女性':'中立')+' · '+(GOALS[p.goal]||'未設定');
- const model=p.display==='auto'?(p.sex==='none'?'neutral':p.sex):p.display;
- $('svg-front').innerHTML=anatomySVG('front',model,v.muscles,selectedMuscle,{prefix:'heat'});$('svg-back').innerHTML=anatomySVG('back',model,v.muscles,selectedMuscle,{prefix:'heat'});$('detail-muscle-select').value=selectedMuscle||'';
+ const model=p.display==='auto'?(p.sex==='none'?'neutral':p.sex):p.display;const dashboardPose=dominantPoseFromTotals(v.muscles,selectedMuscle);
+ $('svg-front').innerHTML=anatomySVG('front',model,v.muscles,selectedMuscle,{prefix:'heat',pose:dashboardPose});$('svg-back').innerHTML=anatomySVG('back',model,v.muscles,selectedMuscle,{prefix:'heat',pose:dashboardPose});$('detail-muscle-select').value=selectedMuscle||'';
  const order=Object.entries(v.muscles).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);$('muscle-ranking').innerHTML=order.length?order.slice(0,8).map(([k,v])=>`<div class="barline"><span>${safeText(names[k])}</span><span class="bar-bg"><span class="bar-inner" style="display:block;width:${Math.min(100,v/Math.max(order[0][1],1)*100).toFixed(0)}%"></span></span><b>${v.toFixed(1)}</b></div>`).join('')+'<p class="fine">直接1.0、補助0.5のセット相当値。部位間で重複します。</p>':'<div class="empty">トレーニングを追加すると部位別の分布が表示されます。</div>';
  renderDashboardEnergy();renderDailyEvaluation();renderRecovery();renderTomorrow();
  $('feedback').innerHTML=feedback(logs,p.goal).map(t=>`<p>${safeText(t)}</p>`).join('');showMuscle(logs,v.muscles);renderSuggestions('activity-suggestions',selectedMuscle,localToday());}
@@ -73,12 +97,14 @@ function renderRecovery(){
  const asOf=val('recovery-date')||localToday();
  const f=recoveryForecast(state.logs,asOf,state.profile),p=state.profile;
  const model=p.display==='auto'?(p.sex==='none'?'neutral':p.sex):p.display;
- const colors={},titles={};
+ const colors={},titles={},recoveryPoseTotals={};
  for(const [id,x] of Object.entries(f.items)){
   colors[id]=recoveryPalette[x.state];
   titles[id]=`${x.name}：${x.statusLabel}、残り休養目安 ${x.remainingDays}日${x.hasRecord?'':'（記録なし）'}`;
+  recoveryPoseTotals[id]=x.lastExposure||0;
  }
- for(const side of ['front','back'])$("recovery-"+side).innerHTML=anatomySVG(side,model,{},selectedRecoveryMuscle,{colors,titles,prefix:'recovery'});
+ const recoveryPose=dominantPoseFromTotals(recoveryPoseTotals,selectedRecoveryMuscle);
+ for(const side of ['front','back'])$("recovery-"+side).innerHTML=anatomySVG(side,model,{},selectedRecoveryMuscle,{colors,titles,prefix:'recovery',pose:recoveryPose});
  $('recovery-summary').innerHTML=[['warning','警告'],['caution','注意'],['ready','記録上は可']].map(([status,label])=>`<div class="recovery-stat"><small>${label}</small><strong style="color:${recoveryPalette[status]}">${f.counts[status]}<small>部位</small></strong></div>`).join('');
  const active=Object.values(f.items).filter(x=>x.hasRecord).sort((a,b)=>b.remainingDays-a.remainingDays||b.lastDate.localeCompare(a.lastDate)||a.name.localeCompare(b.name));
  $('recovery-list').innerHTML=active.length?active.map(x=>`<div class="recovery-entry" data-state="${x.state}"><span>${safeText(x.name)}<small>最終記録 ${safeText(x.lastDate)} ／ ${x.lastExposure}セット相当</small></span><b>${x.remainingDays?`残り約${x.remainingDays}日`:'記録上は可'}</b></div>`).join(''):'<div class="empty">この判定日までに部位別の筋トレ記録がありません。青は十分に回復した証拠ではありません。</div>';

@@ -163,3 +163,5 @@
 .exclusion-body[hidden]{display:none!important}
 .exclusion-body .fine{margin-top:12px}
 @media(max-width:460px){.exclusion-header-actions{width:100%;justify-content:space-between}.exclusion-header-actions .btn{min-height:42px}}
+
+.muscle-svg .sil-pose{fill:none;stroke:#7ea7c5;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round;opacity:.95;stroke-dasharray:5 4}
