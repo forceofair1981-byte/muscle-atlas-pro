@@ -9,11 +9,9 @@ import {planTomorrow,TRAINABLE_GROUPS} from './tomorrow.js';
 import {forecastScenario,normalizeForecastSettings} from './forecast.js';
 import {loadStore,saveStore,clearStore,storageMode} from './db.js';
 import {filterMeals,groupMeals,updateMealById} from './meal_history.js';
-import {massAnalogies,formatCount,MASS_NOTE,CATEGORY_NAMES} from './tonnage_analogies.js';
 import {GOALS,parseTraining,normalizeState,emptyState,validateProfile,safeText,localToday,uid,setsOf,tonnage,bestE1RM,energy,summary,filterPeriod,feedback,mergeMissingDays,exerciseCatalog,restingMetabolicRate,validateCaloriePlan,normalizeMeal,dayCalorieBalance,recoveryForecast} from './engine.js';
 const $=id=>document.getElementById(id),val=id=>$(id)?.value;
 let state=emptyState(),period=1,selectedMuscle=null,selectedRecoveryMuscle=null,pending=null,editingId=null,ignoreUnmatched=new Set(),activeRoute='dashboard',noticeTimer=null;
-const expandedHistoryIds=new Set();
 const number=x=>Number(x)||0;
 const EXCLUSIONS_VIEW_KEY='muscle-atlas-ui-exclusions-expanded-v1';
 function setExclusionsExpanded(expanded){
@@ -32,20 +30,6 @@ function initExclusionsFold(){
 function toast(t){const el=$('toast');el.textContent=t;el.classList.add('show');clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>el.classList.remove('show'),3300)}
 const dateText=s=>s?.replaceAll('-','/');
 const compact=n=>Math.round(n).toLocaleString('ja-JP');
-function analogiesMarkup(kg,date){
- const items=massAnalogies(kg,date);
- if(!items.length)return '';
- const x=items[0];
- const pct=x.percent<.001?'<0.001':Number(x.percent.toFixed(x.percent<.1?3:x.percent<10?2:1)).toLocaleString('ja-JP');
- const category=CATEGORY_NAMES[x.category]||'';
- return `<div class="mass-analogy daily-creature" data-daily-date="${safeText(x.date)}" data-creature-id="${safeText(x.id)}" title="${safeText(x.name)}の比較用重量 ${compact(x.kg)}kg"><span class="mass-icon" aria-hidden="true">${x.emoji}</span><div><small class="creature-date">${safeText(dateText(x.date))} の日替わり比較 · ${safeText(category)}</small><strong>${safeText(x.name)}</strong><b>約 ${formatCount(x.count)} ${x.unit}分</b><small>比較用体重 ${compact(x.kg)}kg · ${safeText(x.quality)}</small>${x.category==='kaiju'?`<small>登場作品：${safeText(x.work)}</small>`:''}${x.count<.01?`<small>1${x.unit}分の ${pct}% 相当</small>`:''}</div></div>`;
-}
-function renderTonnageAnalogies(kg){
- const target=$('tonnage-analogies');if(!target)return;
- const day=localToday();
- target.innerHTML=kg>0?`<div class="analogy-heading"><strong>今日の古代生物・怪獣チャレンジ</strong><span>${compact(kg)} kg の累計</span></div><div class="analogy-grid">${analogiesMarkup(kg,day)}</div><p class="fine">集計期間を変えると累計重量が変わりますが、比較相手は今日（${safeText(dateText(day))}）の1種類に固定されます。</p><p class="fine">${safeText(MASS_NOTE)}</p>`:'<div class="fine">種目の重量・回数・セット数を記録すると、毎日異なる恐竜・古代生物・映画の怪獣に例えて表示します。</div>';
-}
-
 const POSE_GROUPS={
  chest:['chest_up','chest','serratus'],
  shoulders:['delt_front','delt_side','delt_rear','traps_upper'],
@@ -74,7 +58,7 @@ function route(name){if(!['dashboard','record','history','progress','nutrition',
 function save(){return saveStore(state).then(v=>{state=v;$('storage-status').textContent=storageMode()==='indexeddb'?'● IndexedDB・端末内保存':'● 代替保存（端末内）';return v}).catch(e=>{toast('保存失敗：'+e.message);throw e});}
 function viewLogs(){return filterPeriod(state.logs,period)}
 function renderDashboard(){const logs=viewLogs(),v=summary(logs),p=state.profile;
- $('m-sessions').textContent=v.sessions;$('m-sets').textContent=compact(v.sets);$('m-tonnage').textContent=compact(v.tonnage);$('m-energy').textContent=v.totalEnergy===null?'—':compact(v.totalEnergy)+(v.partial?'*':'');renderTonnageAnalogies(v.tonnage);
+ $('m-sessions').textContent=v.sessions;$('m-sets').textContent=compact(v.sets);$('m-tonnage').textContent=compact(v.tonnage);$('m-energy').textContent=v.totalEnergy===null?'—':compact(v.totalEnergy)+(v.partial?'*':'');
  $('profile-summary').textContent=(p.weight||'—')+' kg · '+(p.height||'—')+' cm · '+(p.sex==='male'?'男性':p.sex==='female'?'女性':'中立')+' · '+(GOALS[p.goal]||'未設定');
  const model=p.display==='auto'?(p.sex==='none'?'neutral':p.sex):p.display;
  const recent=filterPeriod(state.logs,14),latestDay=recent.map(x=>x.date).sort().at(-1);
@@ -176,34 +160,9 @@ async function commit(){try{validatePending();const day=val('log-date');const si
 function editLog(id){const l=state.logs.find(x=>x.id===id);if(!l)return;resetForm();editingId=id;$('log-date').value=l.date;$('log-minutes').value=l.minutes??'';$('log-rest').value=l.restMinutes??'';$('log-intensity').value=l.intensity;$('log-text').value=l.raw;$('log-notes').value=l.notes||'';$('cancel-edit').hidden=false;route('record');analyze(); // preserve previously edited group values if source raw was unchanged
  if(l.exercises?.length&&l.raw.trim()===val('log-text').trim()){pending.exercises=structuredClone(l.exercises);pending.cardio=structuredClone(l.cardio);pending.unmatched=[];pending.warnings=[];renderPreview()}
  toast('編集中：'+dateText(l.date));}
-async function deleteLog(id){const l=state.logs.find(x=>x.id===id);if(!l)return;if(!confirm(`${dateText(l.date)}の記録を削除しますか？\nこの操作は取り消せません。`))return;state.logs=state.logs.filter(x=>x.id!==id);expandedHistoryIds.delete(id);await save();renderHistory();toast('記録を削除しました');}
-function renderHistory(){
- const q=val('history-query')?.trim().toLowerCase()||'';
- const logs=[...state.logs].sort((a,b)=>b.date.localeCompare(a.date)||b.createdAt.localeCompare(a.createdAt)).filter(l=>!q||l.date.includes(q)||(l.exercises||[]).some(e=>(e.name+' '+e.displayName).toLowerCase().includes(q)));
- $('history-count').textContent=logs.length+' 件';
- const totalKg=logs.reduce((sum,l)=>sum+tonnage(l),0);const comparisonDay=logs[0]?.date||localToday();
- $('history-tonnage-summary').innerHTML=logs.length?`<div class="history-total-mass"><strong>表示中の履歴：総挙上重量 ${compact(totalKg)} kg</strong><small>検索結果の合計重量を、表示中の最新記録日（${safeText(dateText(comparisonDay))}）で選ばれる1種類に換算します。</small><div class="analogy-grid">${analogiesMarkup(totalKg,comparisonDay)}</div><p class="fine">${safeText(MASS_NOTE)}</p></div>`:'';
- $('history-list').innerHTML=logs.length?logs.map(l=>{
-  const kcal=energy(l),ev=evaluateTrainingDay(state.logs,l.date,state.evaluationLevel,state.profile.goal);
-  const workoutTitle=(l.exercises||[]).slice(0,2).map(x=>x.name).join(' · ')||'有酸素運動';
-  const kg=tonnage(l);
-  return `<details class="history-entry" data-history-id="${safeText(l.id)}" ${expandedHistoryIds.has(l.id)?'open':''}>
-   <summary class="history-summary"><div class="history-top"><div><time>${safeText(dateText(l.date))}</time><h3>${safeText(workoutTitle)}${l.exercises.length>2?' ほか':''}</h3><div class="history-brief">${setsOf(l)}セット · 総挙上重量 ${compact(kg)}kg · 推定消費 ${kcal.gross??'—'}kcal</div></div><span class="history-chevron" aria-hidden="true">▾</span></div></summary>
-   <div class="history-expanded"><div class="history-chips"><span>日別評価 ${ev?ev.score+'/100 · '+ev.label:'—'}（${safeText(LEVELS[state.evaluationLevel]||'普通')}）</span><span>挙上重量 ${compact(kg)}kg</span><span>筋トレ ${l.minutes??'—'}分</span><span>有酸素 ${(l.cardio||[]).reduce((x,c)=>x+(c.minutes||0),0)}分</span><span>消費 ${kcal.gross??'—'}kcal${kcal.partial?' *':''}</span></div>
-   ${kg>0?`<div class="history-analogy-small"><p class="fine">この日の日替わり比較</p><div class="analogy-grid">${analogiesMarkup(kg,l.date)}</div></div>`:''}
-   <div class="history-raw"><strong>記録内容</strong><pre>${safeText(l.raw)}</pre></div>
-   ${l.notes?`<p class="fine">メモ：${safeText(l.notes)}</p>`:''}
-   <div class="history-actions"><button class="btn ghost" data-edit="${safeText(l.id)}">編集する</button><button class="btn danger" data-delete="${safeText(l.id)}">削除</button></div></div></details>`;
- }).join(''):'<div class="empty">条件に合う記録はありません。<br>「トレーニング記録」から追加できます。</div>';
- $('history-expand-all').disabled=!logs.length;$('history-collapse-all').disabled=!logs.length;
-}
-function setHistoryExpanded(expanded){
- for(const el of $('history-list').querySelectorAll('details.history-entry')){
-  el.open=expanded;
-  if(expanded)expandedHistoryIds.add(el.dataset.historyId);else expandedHistoryIds.delete(el.dataset.historyId);
- }
-}
-
+async function deleteLog(id){const l=state.logs.find(x=>x.id===id);if(!l)return;if(!confirm(`${dateText(l.date)}の記録を削除しますか？\nこの操作は取り消せません。`))return;state.logs=state.logs.filter(x=>x.id!==id);await save();renderHistory();toast('記録を削除しました');}
+function renderHistory(){const q=val('history-query')?.trim().toLowerCase()||'',logs=[...state.logs].sort((a,b)=>b.date.localeCompare(a.date)||b.createdAt.localeCompare(a.createdAt)).filter(l=>!q||l.date.includes(q)||(l.exercises||[]).some(e=>(e.name+' '+e.displayName).toLowerCase().includes(q)));
+ $('history-count').textContent=logs.length+' 件';$('history-list').innerHTML=logs.length?logs.map(l=>{const kcal=energy(l);const ev=evaluateTrainingDay(state.logs,l.date,state.evaluationLevel,state.profile.goal);return `<article class="history-entry"><div class="history-top"><div><time>${safeText(dateText(l.date))}</time><h3>${safeText((l.exercises||[]).slice(0,2).map(x=>x.name).join(' · ')||'有酸素運動')}${l.exercises.length>2?' ほか':''}</h3></div><span class="count-chip">${setsOf(l)} SETS</span></div><div class="history-chips"><span>日別評価 ${ev?ev.score+'/100 · '+ev.label:'—'}（${safeText(LEVELS[state.evaluationLevel]||'普通')}）</span><span>挙上重量 ${compact(tonnage(l))}kg</span><span>筋トレ ${l.minutes??'—'}分</span><span>有酸素 ${(l.cardio||[]).reduce((x,c)=>x+(c.minutes||0),0)}分</span><span>消費 ${kcal.gross??'—'}kcal${kcal.partial?' *':''}</span></div><details><summary>内容を表示</summary><pre>${safeText(l.raw)}</pre></details><div class="history-actions"><button class="btn ghost" data-edit="${safeText(l.id)}">編集する</button><button class="btn danger" data-delete="${safeText(l.id)}">削除</button></div></article>`}).join(''):'<div class="empty">条件に合う記録はありません。<br>「トレーニング記録」から追加できます。</div>'}
 function svgChart(points,{suffix='',color='#5ee1bd',bar=false}={}){if(!points.length)return '<div class="empty">記録を追加するとグラフが表示されます。</div>';
  const max=Math.max(1,...points.map(x=>x.value||0)),w=460,h=195,left=26,top=18,inner=w-44,bottom=h-35;const y=v=>bottom-(v/max)*(bottom-top),x=i=>left+(points.length===1?inner/2:i*inner/(points.length-1));let content='';for(let i=0;i<=3;i++){const yy=y(max*i/3);content+=`<line class="gridline" x1="${left}" y1="${yy}" x2="${w-16}" y2="${yy}"/><text class="axis-text" x="2" y="${yy-3}">${Math.round(max*i/3)}</text>`}
  if(bar){const bw=Math.max(10,Math.min(38,inner/points.length*.6));content+=points.map((v,i)=>`<rect x="${x(i)-bw/2}" y="${y(v.value)}" width="${bw}" height="${bottom-y(v.value)}" fill="${color}" rx="4"/>`).join('')}
@@ -542,11 +501,7 @@ function bind(){for(const selectId of ['detail-muscle-select','recovery-detail-m
  $('preview-exercises').addEventListener('input',e=>{const t=e.target;if(!t.dataset.field||!pending)return;const g=pending.exercises[Number(t.dataset.ex)]?.groups[Number(t.dataset.group)];if(!g)return;g[t.dataset.field]=t.value===''&&(t.dataset.field==='weight'||t.dataset.field==='rir')?null:Number(t.value);});
  $('preview-exercises').addEventListener('click',e=>{let t=e.target;if(!pending)return;if(t.dataset.removeEx!==undefined){pending.exercises.splice(Number(t.dataset.removeEx),1);renderPreview()}else if(t.dataset.removeGroup!==undefined){const [i,j]=t.dataset.removeGroup.split(':').map(Number);pending.exercises[i].groups.splice(j,1);renderPreview()}else if(t.dataset.addGroup!==undefined){const e=pending.exercises[Number(t.dataset.addGroup)],last=e.groups[e.groups.length-1]||{weight:null,reps:10,sets:1,rir:null};e.groups.push({...last,sets:1});renderPreview()}});
  $('preview-unmatched').addEventListener('change',e=>{if(e.target.dataset.ignore===undefined)return;const id=Number(e.target.dataset.ignore);if(e.target.checked)ignoreUnmatched.add(id);else ignoreUnmatched.delete(id)});
- $('history-query').addEventListener('input',renderHistory);
- $('history-expand-all').addEventListener('click',()=>setHistoryExpanded(true));
- $('history-collapse-all').addEventListener('click',()=>setHistoryExpanded(false));
- $('history-list').addEventListener('toggle',e=>{const el=e.target;if(!el.matches?.('details.history-entry'))return;if(el.open)expandedHistoryIds.add(el.dataset.historyId);else expandedHistoryIds.delete(el.dataset.historyId)},true);
- $('history-list').addEventListener('click',e=>{const t=e.target.closest('button');if(!t)return;if(t.dataset.edit)editLog(t.dataset.edit);else if(t.dataset.delete)deleteLog(t.dataset.delete)});
+ $('history-query').addEventListener('input',renderHistory);$('history-list').addEventListener('click',e=>{const t=e.target.closest('button');if(!t)return;if(t.dataset.edit)editLog(t.dataset.edit);else if(t.dataset.delete)deleteLog(t.dataset.delete)});
  $('e1rm-exercise').addEventListener('change',renderProgress);$('forecast-calc').addEventListener('click',renderForecast);$('forecast-mode').addEventListener('change',renderForecast);$('forecast-exercise').addEventListener('change',renderForecast);$('forecast-save').addEventListener('click',saveForecastPlan);$('save-profile').addEventListener('click',saveProfile);$('export-json').addEventListener('click',exportJSON);$('export-csv').addEventListener('click',exportCSV);$('export-meals-csv').addEventListener('click',exportMealsCSV);$('import-json').addEventListener('change',e=>importJSON(e.target.files[0]));$('clear-data').addEventListener('click',clearAll);
  $('food-catalog-search').addEventListener('input',renderFoodCatalogSearch);
  $('food-catalog-results').addEventListener('click',e=>{const btn=e.target.closest('[data-pick-food]');if(!btn)return;const name=btn.dataset.pickFood;const inp=$('food-lines');inp.value+=(inp.value.trim()?'\n':'')+'・'+name+' 100g';lastParsedFood=null;lastParsedRaw='';$('food-preview').textContent='食品を追加しました。分量を修正し、解析を実行してください。';inp.focus()});
