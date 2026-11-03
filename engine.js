@@ -222,7 +222,11 @@ export function historicalProfileForDate(state,date){
  for(const x of state.logs||[])if(x.date<=date&&Number(x.weightSnapshot)>0)candidates.push({date:x.date,weight:Number(x.weightSnapshot),source:'workout-weight',priority:1});
  candidates.sort((a,b)=>b.date.localeCompare(a.date)||b.priority-a.priority);
  let weightSource='current-profile';
- if(date<today&&candidates.length){profile.weight=String(candidates[0].weight);weightSource=candidates[0].source;}
+ if(date<today&&candidates.length){
+  // A dated profile with a more recent explicit weight supersedes earlier workout snapshots.
+  if(history.length && history[0].date>=candidates[0].date && Number(profile.weight)>0){weightSource='dated-profile';}
+  else {profile.weight=String(candidates[0].weight);weightSource=candidates[0].source;}
+ }
  if(date>=today){profile.weight=current.weight;weightSource='current-profile';}
  const bodyProfileSource=history.length?'dated-profile':'current-profile-fallback';
  return {profile,weightSource,bodyProfileSource,referenceDate:history[0]?.date||null};

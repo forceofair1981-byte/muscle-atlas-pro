@@ -78,13 +78,13 @@ export function planTomorrow({logs=[],profile={},excluded=[],asOf=localToday(),m
 
 // Plan for the selected calendar day using the preceding 14 complete days.
 export const dayBefore=iso=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(iso)||!Number.isFinite(Date.parse(iso+'T12:00:00Z')))throw Error('日付を確認してください');const d=new Date(iso+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-1);return d.toISOString().slice(0,10)};
-export function planToday({logs=[],profile={},excluded=[],asOf=localToday(),maxExercises=8,extraRestDays=0}={}){
+export function planToday({logs=[],profile={},excluded=[],asOf=localToday(),maxExercises=5,extraRestDays=0}={}){
  const end=dayBefore(asOf);
- const prepared=planTomorrow({logs,profile,excluded,asOf:end,maxTargets:4,maxPerTarget:4,maxTotalExercises:Math.min(8,Math.max(1,maxExercises)),extraRestDays});
+ const prepared=planTomorrow({logs,profile,excluded,asOf:end,maxTargets:2,maxPerTarget:3,maxTotalExercises:Math.min(5,Math.max(1,maxExercises)),extraRestDays});
  // Records already made today should also affect readiness. Never prescribe an already trained muscle.
  const todayRecovery=recoveryForecast(logs,asOf,profile,extraRestDays);
  const eligible=prepared.selected.map(item=>({...item,exercises:item.exercises.filter(e=>{const def=E.find(x=>x.n===e.name);return def&&[...def.p,...def.s].every(id=>todayRecovery.items[id]?.state==='ready'&&!hiddenByExclusions(id,excluded));})})).filter(x=>x.exercises.length);
- const selected=[];let remaining=Math.min(8,Math.max(1,maxExercises));
+ const selected=[];let remaining=Math.min(5,Math.max(1,maxExercises));
  for(const item of eligible){if(remaining<=0)break;const exercises=item.exercises.slice(0,remaining);selected.push({...item,exercises});remaining-=exercises.length;}
- return {...prepared,asOf,today:asOf,selected,restSuggested:!selected.length,note:prepared.note,reason:selected.length?'前日までの14日間の記録と当日の回復状態で、実施候補を最大8種目まで表示します。':'回復推定・除外設定により本日の安全側の提案候補がありません。休養を検討してください。'};
+ return {...prepared,asOf,today:asOf,selected,restSuggested:!selected.length,note:prepared.note,reason:selected.length?'前日までの14日間の記録と当日の回復状態で、実施候補を2部位・合計最大5種目まで表示します。':'回復推定・除外設定により本日の安全側の提案候補がありません。休養を検討してください。'};
 }

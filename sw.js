@@ -1,5 +1,5 @@
-/* Muscle Atlas Pro v3.6.3 — avoid ever returning HTML for JavaScript or CSS requests. */
-const CACHE='muscle-atlas-pro-v3-6-3';
+/* Muscle Atlas Pro v3.6.4 — avoid ever returning HTML for JavaScript or CSS requests. */
+const CACHE='muscle-atlas-pro-v3-6-4';
 const PREFIX='muscle-atlas-pro-';
 const ASSETS=['./','./index.html','./styles.css','./boot.js','./dna.js','./personal_food.js','./app.js','./engine.js','./evaluation.js','./forecast.js','./wellness.js','./food_catalog.js','./food_extra.js','./presets.js','./recommend.js','./catalog.js','./anatomy.js','./detail.js','./tomorrow.js','./meal_history.js','./db.js','./manifest.webmanifest','./icon.svg','./icon-180.png','./icon-512.png','./privacy.html'];
 self.addEventListener('install',event=>event.waitUntil((async()=>{

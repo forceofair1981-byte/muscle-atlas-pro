@@ -120,7 +120,7 @@ function renderRecovery(){
 function renderTomorrow(){
  const field=$('tomorrow-base-date');if(!field)return;
  const asOf=field.value||localToday();let result;
- try{result=planToday({logs:state.logs,profile:state.profile,excluded:state.excludedMuscles||[],asOf,maxExercises:8,extraRestDays:state.trainingPrefs?.extraRestDays||0});}
+ try{result=planToday({logs:state.logs,profile:state.profile,excluded:state.excludedMuscles||[],asOf,maxExercises:5,extraRestDays:state.trainingPrefs?.extraRestDays||0});}
  catch(e){$('tomorrow-plan').textContent='基準日を確認してください：'+e.message;return;}
  $('tomorrow-target-date').textContent=result.today.replaceAll('-','/');
  const rir=state.trainingPrefs?.targetRir||2;
@@ -129,7 +129,7 @@ function renderTomorrow(){
   return `<div class="tomorrow-card"><div class="tomorrow-card-head"><span class="suggestion-tag">${i+1} · 青／記録上は可</span><h4>${safeText(x.name)}</h4></div><p>過去14日：刺激 ${x.volume14.toFixed(1)}セット相当・記録 ${x.frequency14}日</p><ul>${exercises}</ul></div>`;
  }).join('');
  const exerciseCount=result.selected.reduce((total,x)=>total+x.exercises.length,0);
- $('tomorrow-plan').innerHTML=`<div class="tomorrow-metrics"><span>過去14日 <b>${result.trainingDays}日</b></span><span>実施 <b>${result.totalSets}セット</b></span><span>今日の候補 <b>${exerciseCount}/8種目</b></span></div><p class="fine">${safeText(result.note)} ${safeText(result.reason)}</p>${result.restSuggested?'<div class="warning-inline">今日は休養、または軽い活動を優先してください。疼痛・強い疲労がある場合は記録の色に関わらず調整してください。</div>':`<div class="tomorrow-cards">${cards}</div>`}<p class="fine">選択した日の前日まで14日分の記録と当日の記録上の回復状態を参照します。おすすめは最大8種目、RIR ${rir}を目標に本人の体調で調整してください。未記録の運動・睡眠・痛みを判断できません。遺伝情報からの数値推定は行いません。</p>`;
+ $('tomorrow-plan').innerHTML=`<div class="tomorrow-metrics"><span>過去14日 <b>${result.trainingDays}日</b></span><span>実施 <b>${result.totalSets}セット</b></span><span>今日の候補 <b>${result.selected.length}/2部位・${exerciseCount}/5種目</b></span></div><p class="fine">${safeText(result.note)} ${safeText(result.reason)}</p>${result.restSuggested?'<div class="warning-inline">今日は休養、または軽い活動を優先してください。疼痛・強い疲労がある場合は記録の色に関わらず調整してください。</div>':`<div class="tomorrow-cards">${cards}</div>`}<p class="fine">選択した日の前日まで14日分の記録と当日の記録上の回復状態を参照します。おすすめは2部位・合計最大5種目、RIR ${rir}を目標に本人の体調で調整してください。未記録の運動・睡眠・痛みを判断できません。遺伝情報からの数値推定は行いません。</p>`;
 }
 function renderExclusions(){
  const list=new Set(state.excludedMuscles||[]);
@@ -242,7 +242,7 @@ function renderNutrition(){
  notices.push('運動消費・RMR・日常活動の係数は個人差のある推定値です。体重推移などを確認しながら調整してください。');
  $('nutr-caveat').textContent=notices.join(' ');
  const meals=state.meals.filter(m=>m.date===dt);
- $('meal-count').textContent=meals.length+'件';
+ $('meal-count').textContent=meals.length+'件';$('daily-meal-date-label').textContent=dateText(dt);
  renderDailyPFC(dt);
  $('meal-list').innerHTML=meals.length?meals.map(m=>`<div class="meal-item"><div><strong>${safeText(m.name)}</strong><small>${mealLabels[m.mealType]||'食事'}${m.protein!==null?' · P '+m.protein+'g':''}${m.fat!==null?' · F '+m.fat+'g':''}${m.carbs!==null?' · C '+m.carbs+'g':''}</small></div><div class="meal-right"><b>${energyFormat(m.kcal)} kcal</b><button class="btn secondary compact" data-edit-meal="${safeText(m.id)}" aria-label="食事記録を編集">編集</button><button class="btn danger" data-delete-meal="${safeText(m.id)}" aria-label="食事記録を削除">削除</button></div></div>`).join(''):'<div class="empty">この日の食事はまだ登録されていません。</div>';
  renderMealHistory();
@@ -254,7 +254,9 @@ function renderMealHistory(){
  const found=filterMeals(state.meals,{query:val('meal-history-query'),period:val('meal-history-period'),type:val('meal-history-type'),from:val('meal-history-from'),to:val('meal-history-to'),today:localToday()});
  const days=groupMeals(found);$('meal-history-count').textContent=`${found.length}件 / ${days.length}日`;
  $('meal-history-summary').innerHTML=found.length?`<span>検索結果の合計 <b>${compact(found.reduce((a,m)=>a+m.kcal,0))} kcal</b></span><span>食事 ${found.length}件</span><span>日数 ${days.length}日</span>`:'<span>指定した条件の記録はありません。</span>';
- $('meal-history-list').innerHTML=days.map(day=>`<section class="meal-history-day"><div class="meal-history-day-header"><strong>${safeText(dateText(day.date))}</strong><span>${day.entries.length}件 · ${compact(day.kcal)} kcal${day.macroComplete?` · P ${day.protein.toFixed(1)}g F ${day.fat.toFixed(1)}g C ${day.carbs.toFixed(1)}g`:' · PFC一部未入力'}</span><button type="button" class="btn ghost compact" data-meal-go-date="${safeText(day.date)}">この日の収支</button></div>${day.entries.map(m=>`<div class="meal-history-entry"><div class="meal-history-entry-head"><div><strong>${safeText(m.name)}</strong><small>${mealLabels[m.mealType]} · ${energyFormat(m.kcal)} kcal${m.manualOverride?' · 手動合計':''}</small></div><button type="button" class="btn secondary compact" data-edit-meal="${safeText(m.id)}">編集</button></div><details><summary>材料・栄養の記録を開く</summary><div class="meal-history-detail"><p>たんぱく質 ${m.protein??'未入力'}g ／ 脂質 ${m.fat??'未入力'}g ／ 炭水化物 ${m.carbs??'未入力'}g</p>${m.rawText?`<p class="meal-raw">${safeText(m.rawText)}</p>`:''}${m.foodItems?.length?`<ul>${m.foodItems.map(i=>`<li>${safeText(i.label)}${i.excluded?'（除外）':''} · ${i.nutrients?.kcal??'未計上'} kcal / P ${i.nutrients?.protein??'—'}g F ${i.nutrients?.fat??'—'}g C ${i.nutrients?.carbs??'—'}g</li>`).join('')}</ul>`:'<p>食品別明細のない手入力記録です。</p>'}${m.notes?`<p>メモ：${safeText(m.notes)}</p>`:''}</div></details></div>`).join('')}</section>`).join('')||'<div class="empty">過去の食事記録はありません。期間・食事区分を変更して確認できます。</div>';
+ const previousOpen=new Set([...$('meal-history-list').querySelectorAll('details.meal-history-day[open]')].map(x=>x.dataset.mealDay));
+ const isFiltering=Boolean((val('meal-history-query')||'').trim());
+ $('meal-history-list').innerHTML=days.map(day=>`<details class="meal-history-day" data-meal-day="${safeText(day.date)}" ${(isFiltering||previousOpen.has(day.date))?'open':''}><summary class="meal-history-day-header"><strong>${safeText(dateText(day.date))}</strong><span>${day.entries.length}件 · ${compact(day.kcal)} kcal${day.macroComplete?` · P ${day.protein.toFixed(1)}g F ${day.fat.toFixed(1)}g C ${day.carbs.toFixed(1)}g`:' · PFC一部未入力'}</span><span class="fold-chevron" aria-hidden="true"></span></summary><div class="meal-history-day-body"><div class="meal-history-day-actions"><button type="button" class="btn ghost compact" data-meal-go-date="${safeText(day.date)}">この日の収支</button></div>${day.entries.map(m=>`<div class="meal-history-entry"><div class="meal-history-entry-head"><div><strong>${safeText(m.name)}</strong><small>${mealLabels[m.mealType]} · ${energyFormat(m.kcal)} kcal${m.manualOverride?' · 手動合計':''}</small></div><button type="button" class="btn secondary compact" data-edit-meal="${safeText(m.id)}">編集</button></div><details><summary>材料・栄養の記録を開く</summary><div class="meal-history-detail"><p>たんぱく質 ${m.protein??'未入力'}g ／ 脂質 ${m.fat??'未入力'}g ／ 炭水化物 ${m.carbs??'未入力'}g</p>${m.rawText?`<p class="meal-raw">${safeText(m.rawText)}</p>`:''}${m.foodItems?.length?`<ul>${m.foodItems.map(i=>`<li>${safeText(i.label)}${i.excluded?'（除外）':''} · ${i.nutrients?.kcal??'未計上'} kcal / P ${i.nutrients?.protein??'—'}g F ${i.nutrients?.fat??'—'}g C ${i.nutrients?.carbs??'—'}g</li>`).join('')}</ul>`:'<p>食品別明細のない手入力記録です。</p>'}${m.notes?`<p>メモ：${safeText(m.notes)}</p>`:''}</div></details></div>`).join('')}</div></details>`).join('')||'<div class="empty">過去の食事記録はありません。期間・食事区分を変更して確認できます。</div>';
 }
 function closeMealEditor(){editingMealId=null;$('meal-edit-panel').hidden=true}
 function startMealEdit(id){
@@ -330,10 +332,15 @@ function lookupPersonalFoodOnName(){
 function renderPersonalFoods(){
  const result=$('personal-food-results');if(!result)return;
  const all=state.personalFoods||[],q=(val('personal-food-search')||'').normalize('NFKC').toLocaleLowerCase().trim();
- const found=all.filter(f=>!q||f.name.normalize('NFKC').toLocaleLowerCase().includes(q)).slice(0,60);
+ const found=all.filter(f=>!q||f.name.normalize('NFKC').toLocaleLowerCase().includes(q)).slice(0,150);
  $('personal-food-count').textContent=all.length+'品目';
- result.innerHTML=found.length?found.map(f=>`<div class="personal-food-row"><div><strong>${safeText(f.name)}</strong><small>${f.kcal} kcal · P ${f.protein===null?'未入力':f.protein+'g'} / F ${f.fat===null?'未入力':f.fat+'g'} / C ${f.carbs===null?'未入力':f.carbs+'g'}</small></div><div class="personal-food-actions"><button class="btn secondary compact" type="button" data-use-personal-food="${safeText(f.name)}">呼び出す</button><button class="btn danger compact" type="button" data-delete-personal-food="${safeText(f.name)}">削除</button></div></div>`).join(''):'<div class="empty">まだ登録した食事がありません。食事名とカロリー・PFCを入力して保存してください。</div>';
+ // Updates are grouped by Japan-local calendar date; this is not a meal consumption date.
+ const dateOf=f=>{try{return new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(f.updatedAt))}catch{return String(f.updatedAt||'').slice(0,10)||'日付不明'}};
+ const groups=new Map();for(const food of found){const key=dateOf(food);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(food)}
+ const previousOpen=new Set([...result.querySelectorAll('details.personal-food-day[open]')].map(x=>x.dataset.foodDay));
+ result.innerHTML=found.length?[...groups].sort(([a],[b])=>b.localeCompare(a)).map(([date,foods])=>`<details class="personal-food-day" data-food-day="${safeText(date)}" ${(q||previousOpen.has(date))?'open':''}><summary class="personal-food-day-summary"><strong>${safeText(dateText(date))} 更新</strong><span>${foods.length}品目</span><span class="fold-chevron" aria-hidden="true"></span></summary><div class="personal-food-day-body">${foods.map(f=>`<div class="personal-food-row"><div><strong>${safeText(f.name)}</strong><small>${f.kcal} kcal · P ${f.protein===null?'未入力':f.protein+'g'} / F ${f.fat===null?'未入力':f.fat+'g'} / C ${f.carbs===null?'未入力':f.carbs+'g'}</small></div><div class="personal-food-actions"><button class="btn secondary compact" type="button" data-use-personal-food="${safeText(f.name)}">呼び出す</button><button class="btn danger compact" type="button" data-delete-personal-food="${safeText(f.name)}">削除</button></div></div>`).join('')}</div></details>`).join(''):'<div class="empty">まだ登録した食事がありません。食事名とカロリー・PFCを入力して保存してください。</div>';
 }
+
 async function savePersonalFoodOnly(){
  const previous=state.personalFoods||[];
  try{
@@ -619,7 +626,7 @@ function bind(){for(const selectId of ['detail-muscle-select','recovery-detail-m
  $('food-analyze').addEventListener('click',analyzeFood);$('food-preview').addEventListener('input',editFoodRow);$('food-preview').addEventListener('change',editFoodRow);$('food-save').addEventListener('click',saveFood);$('food-photo').addEventListener('change',e=>choosePhoto(e,'food'));$('food-photo-read').addEventListener('click',()=>tryPhotoOCR('food'));$('food-label-analyze').addEventListener('click',applyFoodLabel);$('save-pfc-target').addEventListener('click',savePFCGoal);$('pfc-preset').addEventListener('change',choosePFCPreset);
  $('vital-date').value=localToday();$('vital-time').value=new Date().toTimeString().slice(0,5);$('save-vital').addEventListener('click',saveVital);$('vital-photo').addEventListener('change',e=>choosePhoto(e,'vital'));$('vital-photo-read').addEventListener('click',()=>tryPhotoOCR('vital'));$('vital-text-apply').addEventListener('click',applyVitalText);$('vital-list').addEventListener('click',e=>{const t=e.target.closest('[data-delete-vital]');if(t)deleteVital(t.dataset.deleteVital)});$('export-vitals-csv').addEventListener('click',exportVitalsCSV);
  for(const id of ['meal-history-query','meal-history-period','meal-history-type','meal-history-from','meal-history-to'])$(id).addEventListener(id==='meal-history-query'?'input':'change',renderMealHistory);
- $('meal-history-list').addEventListener('click',e=>{const btn=e.target.closest('button');if(!btn)return;if(btn.dataset.editMeal)startMealEdit(btn.dataset.editMeal);else if(btn.dataset.mealGoDate){$('nutrition-date').value=btn.dataset.mealGoDate;renderNutrition();$('page-nutrition').scrollIntoView({behavior:'smooth',block:'start'})}});
+ $('meal-history-list').addEventListener('click',e=>{const btn=e.target.closest('button');if(!btn)return;if(btn.dataset.editMeal)startMealEdit(btn.dataset.editMeal);else if(btn.dataset.mealGoDate){$('nutrition-date').value=btn.dataset.mealGoDate;renderNutrition();$('daily-meals-fold').open=true;$('page-nutrition').scrollIntoView({behavior:'smooth',block:'start'})}});
  $('meal-edit-cancel').addEventListener('click',closeMealEditor);$('meal-edit-recalc').addEventListener('click',recalculateMealEditor);$('meal-edit-save').addEventListener('click',saveMealEdit);
  $('nutr-quick-sex').addEventListener('change',async e=>{
   const choice=e.target.value;if(!['male','female','none'].includes(choice))return;
