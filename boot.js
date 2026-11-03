@@ -37,7 +37,7 @@
         await Promise.all(keys.filter(function(key){return key.indexOf('muscle-atlas-pro-')===0;}).map(function(key){return caches.delete(key);}));
       }
       // A query parameter bypasses cached navigation without changing the origin of IndexedDB data.
-      var url=new URL(location.href);url.searchParams.set('app-repair','3.6.5');
+      var url=new URL(location.href);url.searchParams.set('app-repair','3.6.6');
       location.replace(url.href);
     }catch(err){
       repair.disabled=false;

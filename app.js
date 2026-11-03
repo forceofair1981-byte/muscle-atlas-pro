@@ -2,6 +2,7 @@ import {evaluateTrainingDay,LEVELS} from './evaluation.js';
 import {findPersonalFood,savePersonalFood,mergePersonalFoods,personalFoodsBackup,readPersonalFoodsBackup} from './personal_food.js';
 import {FOOD_REFERENCE,parseFoodLines,parseLabel,calculateFoodTotals,dailyPFC,validatePFCGoal,parseBPText,normalizeVital} from './wellness.js';
 import {E,names} from './catalog.js';
+import {EXERCISE_GROUPS,searchExerciseDictionary,exerciseDictionaryCount} from './exercise_search.js';
 import {PFC_PRESETS,pfcForPreset,matchPfcPreset,pfcGramTargets} from './presets.js';
 import {recommendForMuscle} from './recommend.js';
 import {anatomySVG} from './anatomy.js';
@@ -142,6 +143,22 @@ async function saveExclusions(){
  state.excludedMuscles=[...$('exclusion-list').querySelectorAll('input[data-exclude]:checked')].map(x=>x.dataset.exclude);
  try{await save();renderExclusions();renderTomorrow();toast(`${state.excludedMuscles.length}部位を候補から除外しました`)}
  catch(e){state.excludedMuscles=old;toast('保存に失敗しました：'+e.message)}
+}
+let exerciseSearchLimit=18;
+function renderExerciseLookup(){
+ const found=searchExerciseDictionary(val('exercise-catalog-search'),val('exercise-catalog-group')||'all');
+ const listing=$('exercise-catalog-results');
+ $('exercise-catalog-count').textContent=`${exerciseDictionaryCount}種目`;
+ $('exercise-catalog-status').textContent=found.length?`${found.length}種目が一致しています。${Math.min(exerciseSearchLimit,found.length)}件を表示`:'条件に一致する種目はありません。別の名前や部位をお試しください。';
+ listing.innerHTML=found.slice(0,exerciseSearchLimit).map(({i,exercise})=>`<div class="exercise-lookup-item"><div><strong>${safeText(exercise.n)}</strong><small>主な部位：${safeText(exercise.p.map(id=>names[id]).join('・'))}</small></div><button type="button" class="btn ghost compact" data-add-exercise="${i}" aria-label="${safeText(exercise.n)}を記録欄に追加">入力欄に追加</button></div>`).join('')+
+ (found.length>exerciseSearchLimit?`<button type="button" class="btn secondary compact exercise-more" data-exercise-more="true">さらに表示（残り${found.length-exerciseSearchLimit}件）</button>`:'');
+}
+function invalidateTrainingAnalysis(){
+ if(!pending)return;
+ pending=null;ignoreUnmatched.clear();
+ $('preview-count').textContent='再解析が必要';$('preview-summary').textContent='入力内容が変更されました。「入力を解析する」を押してから保存してください。';
+ for(const id of ['preview-exercises','preview-cardio','preview-unmatched','review-alerts'])$(id).innerHTML='';
+ $('save-session').disabled=true;
 }
 function resetForm(){editingId=null;pending=null;ignoreUnmatched.clear();$('log-date').value=localToday();$('log-minutes').value='';$('log-rest').value='';$('log-intensity').value='moderate';$('log-text').value='';$('log-notes').value='';$('preview-count').textContent='未解析';$('preview-summary').textContent='入力後「入力を解析する」を押してください。';for(const id of ['preview-exercises','preview-cardio','preview-unmatched','review-alerts'])$(id).innerHTML='';$('save-session').disabled=true;$('cancel-edit').hidden=true;$('duplicate-choice').hidden=true;$('duplicate-mode').value='';}
 function analyze(){pending=parseTraining(val('log-text'));
@@ -637,7 +654,22 @@ function bind(){for(const selectId of ['detail-muscle-select','recovery-detail-m
  $('map-side').addEventListener('change',()=>{const v=val('map-side');$('body-grid').className='body-grid'+(v==='both'?'':' single '+v)});
  for(const id of ['svg-front','svg-back'])$(id).addEventListener('click',e=>{const node=e.target.closest('[data-muscle]');if(!node)return;selectedMuscle=node.dataset.muscle;renderDashboard()});
  for(const id of ['svg-front','svg-back'])$(id).addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.matches('[data-muscle]')){e.preventDefault();selectedMuscle=e.target.dataset.muscle;renderDashboard()}});
- $('insert-example').addEventListener('click',()=>{$('log-text').value='ベンチプレス 60kg10rep1set 80kg8rep1set 90kg6rep2set 80kg8rep\nケーブルクランチ 70kg50rep1set30rep1set\nトレーニング時間90分\nセット間2分\nトレッドミル 15%傾斜2.0km (6.0km/h)';toast('入力例をセットしました')});
+ $('exercise-catalog-group').innerHTML=EXERCISE_GROUPS.map(group=>`<option value="${group.id}">${safeText(group.label)}</option>`).join('');
+ $('exercise-catalog-search').addEventListener('input',()=>{exerciseSearchLimit=18;renderExerciseLookup()});
+ $('exercise-catalog-group').addEventListener('change',()=>{exerciseSearchLimit=18;renderExerciseLookup()});
+ $('exercise-catalog-results').addEventListener('click',event=>{
+  const button=event.target.closest('button');if(!button)return;
+  if(button.dataset.exerciseMore){exerciseSearchLimit+=18;renderExerciseLookup();return;}
+  if(button.dataset.addExercise===undefined)return;
+  const exercise=E[Number(button.dataset.addExercise)];if(!exercise)return;
+  const input=$('log-text');input.value+=(input.value.trim()&&!input.value.endsWith('\n')?'\n':'')+exercise.n+' ';
+  input.dispatchEvent(new Event('input',{bubbles:true}));
+  input.focus();input.setSelectionRange(input.value.length,input.value.length);
+  toast('種目名を追加しました。重量・回数・セット数を追記して解析してください。');
+ });
+ $('log-text').addEventListener('input',invalidateTrainingAnalysis);
+ renderExerciseLookup();
+ $('insert-example').addEventListener('click',()=>{invalidateTrainingAnalysis();$('log-text').value='ベンチプレス 60kg10rep1set 80kg8rep1set 90kg6rep2set 80kg8rep\nケーブルクランチ 70kg50rep1set30rep1set\nトレーニング時間90分\nセット間2分\nトレッドミル 15%傾斜2.0km (6.0km/h)';toast('入力例をセットしました')});
  $('analyze-btn').addEventListener('click',analyze);$('save-session').addEventListener('click',commit);$('cancel-edit').addEventListener('click',()=>{resetForm();toast('編集を中止しました')});
  $('preview-exercises').addEventListener('input',e=>{const t=e.target;if(!t.dataset.field||!pending)return;const g=pending.exercises[Number(t.dataset.ex)]?.groups[Number(t.dataset.group)];if(!g)return;g[t.dataset.field]=t.value===''&&(t.dataset.field==='weight'||t.dataset.field==='rir')?null:Number(t.value);});
  $('preview-exercises').addEventListener('click',e=>{let t=e.target;if(!pending)return;if(t.dataset.removeEx!==undefined){pending.exercises.splice(Number(t.dataset.removeEx),1);renderPreview()}else if(t.dataset.removeGroup!==undefined){const [i,j]=t.dataset.removeGroup.split(':').map(Number);pending.exercises[i].groups.splice(j,1);renderPreview()}else if(t.dataset.addGroup!==undefined){const e=pending.exercises[Number(t.dataset.addGroup)],last=e.groups[e.groups.length-1]||{weight:null,reps:10,sets:1,rir:null};e.groups.push({...last,sets:1});renderPreview()}});

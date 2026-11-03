@@ -243,3 +243,20 @@ details[open]>summary .fold-chevron{transform:rotate(180deg)}
 .training-day summary:focus-visible{outline:2px solid #62e7bc;outline-offset:-2px}
 .training-day summary:hover{background:#1d3852}
 @media(max-width:600px){.history-fold-actions{justify-content:flex-start;width:100%}.history-fold-actions .btn{font-size:11px}.training-day-summary{flex-wrap:wrap;gap:6px;padding:12px}.training-day-stats{margin-left:0;text-align:left;order:3;width:100%}.training-day-summary>.fold-chevron{margin-left:auto}.training-day-body{padding:7px}.training-session-body{padding:10px}.training-session-summary{padding:12px}}
+
+/* v3.6.6: searchable, offline workout dictionary for exercise entry */
+.exercise-lookup{margin:15px 0 0;border:1px solid #36526d;border-radius:14px;background:#0b1a30;overflow:hidden}
+.exercise-lookup>summary{padding:13px 15px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;font-size:13px;color:#d6ecfb;font-weight:800}
+.exercise-lookup>summary::marker{color:#78c8de}
+.exercise-lookup>summary .count-chip{margin-left:auto}
+.exercise-lookup-body{padding:0 13px 14px}
+.exercise-lookup-controls{display:grid;grid-template-columns:minmax(0,1fr) minmax(100px,.45fr);gap:9px;margin:10px 0}
+.exercise-lookup-controls label{color:#9fc1d8;font-size:11px;display:flex;flex-direction:column;gap:5px}
+.exercise-lookup-controls input,.exercise-lookup-controls select{min-height:43px}
+.exercise-lookup-results{max-height:330px;overflow-y:auto;border-top:1px solid #25415a}
+.exercise-lookup-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 2px;border-bottom:1px solid #213a54}
+.exercise-lookup-item strong{display:block;font-size:12px;color:#d9eefa}
+.exercise-lookup-item small{display:block;font-size:10px;color:#8ca9c1;margin-top:3px;line-height:1.5}
+.exercise-lookup-item .btn{font-size:11px;padding:8px 9px;white-space:nowrap;flex-shrink:0}
+.exercise-more{display:block;margin:10px auto}
+@media(max-width:390px){.exercise-lookup-controls{grid-template-columns:1fr}.exercise-lookup-item{gap:5px}}

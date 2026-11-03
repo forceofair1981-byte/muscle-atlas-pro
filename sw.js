@@ -1,7 +1,7 @@
-/* Muscle Atlas Pro v3.6.5 — avoid ever returning HTML for JavaScript or CSS requests. */
-const CACHE='muscle-atlas-pro-v3-6-5';
+/* Muscle Atlas Pro v3.6.6 — avoid ever returning HTML for JavaScript or CSS requests. */
+const CACHE='muscle-atlas-pro-v3-6-6';
 const PREFIX='muscle-atlas-pro-';
-const ASSETS=['./','./index.html','./styles.css','./boot.js','./dna.js','./personal_food.js','./app.js','./engine.js','./evaluation.js','./forecast.js','./wellness.js','./food_catalog.js','./food_extra.js','./presets.js','./recommend.js','./catalog.js','./anatomy.js','./detail.js','./tomorrow.js','./meal_history.js','./db.js','./manifest.webmanifest','./icon.svg','./icon-180.png','./icon-512.png','./privacy.html'];
+const ASSETS=['./','./index.html','./styles.css','./boot.js','./dna.js','./personal_food.js','./app.js','./engine.js','./evaluation.js','./forecast.js','./wellness.js','./food_catalog.js','./food_extra.js','./presets.js','./recommend.js','./catalog.js','./exercise_search.js','./anatomy.js','./detail.js','./tomorrow.js','./meal_history.js','./db.js','./manifest.webmanifest','./icon.svg','./icon-180.png','./icon-512.png','./privacy.html'];
 self.addEventListener('install',event=>event.waitUntil((async()=>{
   const cache=await caches.open(CACHE);
   // Do not reject the entire installation because one optional icon or page is missing.
