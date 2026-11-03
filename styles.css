@@ -218,3 +218,28 @@ details[open]>summary .fold-chevron{transform:rotate(180deg)}
 .meal-history-day-header{display:flex;cursor:pointer}
 .meal-history-day-actions{padding:10px 15px 2px;display:flex;justify-content:flex-end}
 @media(max-width:460px){.nutrition-fold-head{flex-wrap:wrap}.nutrition-fold-actions{margin-left:auto}.meal-history-day-header strong{flex:0 0 auto}.meal-history-day-header span:nth-child(2){flex-basis:65%}}
+
+/* v3.6.5: daily + per-session collapsible training history */
+.history-toolbar{flex-wrap:wrap;align-items:center}
+.history-fold-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+.history-fold-actions .btn{padding:8px 10px;font-size:11px}
+.training-day{border:1px solid #325674;background:#0d2034;border-radius:15px;margin:12px 0;overflow:hidden}
+.training-day-summary,.training-session-summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:12px;padding:15px;background:#172e46;min-width:0}
+.training-day-summary::-webkit-details-marker,.training-session-summary::-webkit-details-marker{display:none}
+.training-day-summary strong{font-size:15px;color:#edf9ff}
+.training-day-label,.training-session-label{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1}
+.training-day-label small,.training-session-label small{font-size:11px;color:#a4c0d5;font-weight:500}
+.training-day-stats{font-size:11px;color:#add6e4;text-align:right;line-height:1.6}
+.training-day-summary .fold-chevron,.training-session-summary .fold-chevron{flex:0 0 auto}
+.training-day-body{padding:12px;display:grid;gap:9px}
+.training-session{border-radius:12px;border:1px solid #36526b;background:#101e32;overflow:hidden}
+.training-session-summary{background:#142940;padding:12px 14px}
+.training-session-summary strong{font-size:13px;color:#e1f4ff;line-height:1.55;overflow-wrap:anywhere}
+.training-session-body{padding:11px 14px 15px;border-top:1px solid #34506d}
+.training-session-body .history-chips{margin-top:0}
+.training-original summary{cursor:pointer;color:#93d8ff;font-weight:700;font-size:12px;margin:9px 0}
+.training-original pre{max-height:290px;overflow:auto;background:#09192a;border:1px solid #294660;border-radius:9px;padding:12px;margin:7px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.65;color:#bfd6e9}
+.training-session-body .history-actions{display:flex;gap:9px;flex-wrap:wrap}
+.training-day summary:focus-visible{outline:2px solid #62e7bc;outline-offset:-2px}
+.training-day summary:hover{background:#1d3852}
+@media(max-width:600px){.history-fold-actions{justify-content:flex-start;width:100%}.history-fold-actions .btn{font-size:11px}.training-day-summary{flex-wrap:wrap;gap:6px;padding:12px}.training-day-stats{margin-left:0;text-align:left;order:3;width:100%}.training-day-summary>.fold-chevron{margin-left:auto}.training-day-body{padding:7px}.training-session-body{padding:10px}.training-session-summary{padding:12px}}

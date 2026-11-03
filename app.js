@@ -165,8 +165,44 @@ function editLog(id){const l=state.logs.find(x=>x.id===id);if(!l)return;resetFor
  if(l.exercises?.length&&l.raw.trim()===val('log-text').trim()){pending.exercises=structuredClone(l.exercises);pending.cardio=structuredClone(l.cardio);pending.unmatched=[];pending.warnings=[];renderPreview()}
  toast('編集中：'+dateText(l.date));}
 async function deleteLog(id){const l=state.logs.find(x=>x.id===id);if(!l)return;if(!confirm(`${dateText(l.date)}の記録を削除しますか？\nこの操作は取り消せません。`))return;state.logs=state.logs.filter(x=>x.id!==id);await save();renderHistory();toast('記録を削除しました');}
-function renderHistory(){const q=val('history-query')?.trim().toLowerCase()||'',logs=[...state.logs].sort((a,b)=>b.date.localeCompare(a.date)||b.createdAt.localeCompare(a.createdAt)).filter(l=>!q||l.date.includes(q)||(l.exercises||[]).some(e=>(e.name+' '+e.displayName).toLowerCase().includes(q)));
- $('history-count').textContent=logs.length+' 件';$('history-list').innerHTML=logs.length?logs.map(l=>{const kcal=energy(l);const ev=evaluateTrainingDay(state.logs,l.date,state.evaluationLevel,state.profile.goal);return `<article class="history-entry"><div class="history-top"><div><time>${safeText(dateText(l.date))}</time><h3>${safeText((l.exercises||[]).slice(0,2).map(x=>x.name).join(' · ')||'有酸素運動')}${l.exercises.length>2?' ほか':''}</h3></div><span class="count-chip">${setsOf(l)} SETS</span></div><div class="history-chips"><span>日別評価 ${ev?ev.score+'/100 · '+ev.label:'—'}（${safeText(LEVELS[state.evaluationLevel]||'普通')}）</span><span>挙上重量 ${compact(tonnage(l))}kg</span><span>筋トレ ${l.minutes??'—'}分</span><span>有酸素 ${(l.cardio||[]).reduce((x,c)=>x+(c.minutes||0),0)}分</span><span>消費 ${kcal.gross??'—'}kcal${kcal.partial?' *':''}</span></div><details><summary>内容を表示</summary><pre>${safeText(l.raw)}</pre></details><div class="history-actions"><button class="btn ghost" data-edit="${safeText(l.id)}">編集する</button><button class="btn danger" data-delete="${safeText(l.id)}">削除</button></div></article>`}).join(''):'<div class="empty">条件に合う記録はありません。<br>「トレーニング記録」から追加できます。</div>'}
+function renderHistory(){
+ const q=(val('history-query')||'').trim().toLowerCase();
+ const list=$('history-list');
+ const openDays=new Set([...list.querySelectorAll('details.training-day[open]')].map(el=>el.dataset.day));
+ const openSessions=new Set([...list.querySelectorAll('details.training-session[open]')].map(el=>el.dataset.session));
+ const logs=[...state.logs]
+  .sort((a,b)=>b.date.localeCompare(a.date)||(b.createdAt||'').localeCompare(a.createdAt||''))
+  .filter(l=>!q||l.date.includes(q)||(l.exercises||[]).some(e=>(String(e.name||'')+' '+String(e.displayName||'')).toLowerCase().includes(q)));
+ const groups=new Map();
+ for(const log of logs){if(!groups.has(log.date))groups.set(log.date,[]);groups.get(log.date).push(log)}
+ $('history-count').textContent=`${logs.length}件 / ${groups.size}日`;
+ $('history-expand-all').disabled=logs.length===0;
+ $('history-collapse-all').disabled=logs.length===0;
+ list.innerHTML=logs.length?[...groups].map(([date,sessions])=>{
+  const daySets=sessions.reduce((total,log)=>total+setsOf(log),0);
+  const dayTonnage=sessions.reduce((total,log)=>total+tonnage(log),0);
+  const open=q||openDays.has(date)?' open':'';
+  return `<details class="training-day" data-day="${safeText(date)}"${open}>
+   <summary class="training-day-summary"><span class="training-day-label"><strong>${safeText(dateText(date))}</strong><small>${sessions.length}件のトレーニング</small></span><span class="training-day-stats">${daySets}セット · 総挙上重量 ${compact(dayTonnage)}kg</span><span class="fold-chevron" aria-hidden="true"></span></summary>
+   <div class="training-day-body">${sessions.map((l,i)=>{
+    const kcal=energy(l),ev=evaluateTrainingDay(state.logs,l.date,state.evaluationLevel,state.profile.goal);
+    const name=(l.exercises||[]).slice(0,2).map(x=>x.name).join(' · ')||(l.cardio||[]).map(x=>x.name).slice(0,2).join(' · ')||'有酸素運動';
+    const other=(l.exercises||[]).length>2?' ほか':'';
+    const sessionOpen=q||openSessions.has(l.id)?' open':'';
+    return `<details class="training-session" data-session="${safeText(l.id)}"${sessionOpen}>
+     <summary class="training-session-summary"><span class="training-session-label"><strong>${i+1}. ${safeText(name)}${other}</strong><small>${(l.exercises||[]).length}種目 · ${setsOf(l)}セット · ${compact(tonnage(l))}kg</small></span><span class="fold-chevron" aria-hidden="true"></span></summary>
+     <div class="training-session-body"><div class="history-chips"><span>日別評価 ${ev?ev.score+'/100 · '+safeText(ev.label):'—'}（${safeText(LEVELS[state.evaluationLevel]||'普通')}）</span><span>挙上重量 ${compact(tonnage(l))}kg</span><span>筋トレ ${l.minutes??'—'}分</span><span>有酸素 ${(l.cardio||[]).reduce((x,c)=>x+(c.minutes||0),0)}分</span><span>消費 ${kcal.gross??'—'}kcal${kcal.partial?' *':''}</span></div>
+      <details class="training-original"><summary>入力したトレーニング内容を表示</summary><pre>${safeText(l.raw||'')}</pre></details>
+      ${l.notes?`<p class="fine">メモ：${safeText(l.notes)}</p>`:''}
+      <div class="history-actions"><button class="btn ghost" data-edit="${safeText(l.id)}" type="button">編集する</button><button class="btn danger" data-delete="${safeText(l.id)}" type="button">削除</button></div></div>
+     </details>`;
+   }).join('')}</div>
+  </details>`;
+ }).join(''):'<div class="empty">条件に合う記録はありません。<br>「トレーニング記録」から追加できます。</div>';
+}
+function setHistoryExpanded(expand){
+ for(const details of $('history-list').querySelectorAll('details.training-day,details.training-session'))details.open=Boolean(expand);
+}
 function svgChart(points,{suffix='',color='#5ee1bd',bar=false}={}){if(!points.length)return '<div class="empty">記録を追加するとグラフが表示されます。</div>';
  const max=Math.max(1,...points.map(x=>x.value||0)),w=460,h=195,left=26,top=18,inner=w-44,bottom=h-35;const y=v=>bottom-(v/max)*(bottom-top),x=i=>left+(points.length===1?inner/2:i*inner/(points.length-1));let content='';for(let i=0;i<=3;i++){const yy=y(max*i/3);content+=`<line class="gridline" x1="${left}" y1="${yy}" x2="${w-16}" y2="${yy}"/><text class="axis-text" x="2" y="${yy-3}">${Math.round(max*i/3)}</text>`}
  if(bar){const bw=Math.max(10,Math.min(38,inner/points.length*.6));content+=points.map((v,i)=>`<rect x="${x(i)-bw/2}" y="${y(v.value)}" width="${bw}" height="${bottom-y(v.value)}" fill="${color}" rx="4"/>`).join('')}
@@ -606,7 +642,7 @@ function bind(){for(const selectId of ['detail-muscle-select','recovery-detail-m
  $('preview-exercises').addEventListener('input',e=>{const t=e.target;if(!t.dataset.field||!pending)return;const g=pending.exercises[Number(t.dataset.ex)]?.groups[Number(t.dataset.group)];if(!g)return;g[t.dataset.field]=t.value===''&&(t.dataset.field==='weight'||t.dataset.field==='rir')?null:Number(t.value);});
  $('preview-exercises').addEventListener('click',e=>{let t=e.target;if(!pending)return;if(t.dataset.removeEx!==undefined){pending.exercises.splice(Number(t.dataset.removeEx),1);renderPreview()}else if(t.dataset.removeGroup!==undefined){const [i,j]=t.dataset.removeGroup.split(':').map(Number);pending.exercises[i].groups.splice(j,1);renderPreview()}else if(t.dataset.addGroup!==undefined){const e=pending.exercises[Number(t.dataset.addGroup)],last=e.groups[e.groups.length-1]||{weight:null,reps:10,sets:1,rir:null};e.groups.push({...last,sets:1});renderPreview()}});
  $('preview-unmatched').addEventListener('change',e=>{if(e.target.dataset.ignore===undefined)return;const id=Number(e.target.dataset.ignore);if(e.target.checked)ignoreUnmatched.add(id);else ignoreUnmatched.delete(id)});
- $('history-query').addEventListener('input',renderHistory);$('history-list').addEventListener('click',e=>{const t=e.target.closest('button');if(!t)return;if(t.dataset.edit)editLog(t.dataset.edit);else if(t.dataset.delete)deleteLog(t.dataset.delete)});
+ $('history-query').addEventListener('input',renderHistory);$('history-expand-all').addEventListener('click',()=>setHistoryExpanded(true));$('history-collapse-all').addEventListener('click',()=>setHistoryExpanded(false));$('history-list').addEventListener('click',e=>{const t=e.target.closest('button');if(!t)return;if(t.dataset.edit)editLog(t.dataset.edit);else if(t.dataset.delete)deleteLog(t.dataset.delete)});
  $('e1rm-exercise').addEventListener('change',renderProgress);$('forecast-calc').addEventListener('click',renderForecast);$('forecast-mode').addEventListener('change',renderForecast);$('forecast-exercise').addEventListener('change',renderForecast);$('forecast-save').addEventListener('click',saveForecastPlan);$('save-profile').addEventListener('click',saveProfile);$('export-json').addEventListener('click',exportJSON);$('export-csv').addEventListener('click',exportCSV);$('export-meals-csv').addEventListener('click',exportMealsCSV);$('import-json').addEventListener('change',e=>importJSON(e.target.files[0]));$('clear-data').addEventListener('click',clearAll);
  $('food-catalog-search').addEventListener('input',renderFoodCatalogSearch);
  $('food-catalog-results').addEventListener('click',e=>{const btn=e.target.closest('[data-pick-food]');if(!btn)return;const name=btn.dataset.pickFood;const inp=$('food-lines');inp.value+=(inp.value.trim()?'\n':'')+'・'+name+' 100g';lastParsedFood=null;lastParsedRaw='';$('food-preview').textContent='食品を追加しました。分量を修正し、解析を実行してください。';inp.focus()});
