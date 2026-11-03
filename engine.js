@@ -1,3 +1,4 @@
+import {localizedExerciseAliases} from './i18n.js';
 import {normalizeVital,validatePFCGoal} from './wellness.js';
 import {pfcForPreset,matchPfcPreset} from './presets.js';
 import {E, names} from './catalog.js';
@@ -5,7 +6,7 @@ import {DETAIL_IDS} from './detail.js';
 import {normalizeDNAMarkers,emptyDNAMarkers} from './dna.js';
 import {normalizePersonalFoods,mergePersonalFoods} from './personal_food.js';
 
-export const VERSION=14;
+export const VERSION=15;
 export const GOALS={balanced:'筋肥大＋減量',hypertrophy:'筋肥大',strength:'筋力向上',fatloss:'減量',proportion:'プロポーション改善（体型改善）'};
 export const defaultProfile=()=>({age:'30',height:'165',weight:'60',fat:'',muscle:'',sex:'none',display:'auto',goal:'balanced',level:'advanced'});
 export const defaultCaloriePlan=()=>({activityFactor:1.2,goalAdjustment:-250,exerciseCredit:0.5});
@@ -13,17 +14,17 @@ export const EVALUATION_LEVELS={gentle:'優しい',normal:'普通',strict:'厳�
 export const defaultForecastPlan=()=>({dailyIntake:'',strengthMode:'trend',strengthMonthlyPct:0,exercise:''});
 export const normalizeTrainingPrefs=v=>({targetRir:[1,2,3,4,5].includes(Number(v?.targetRir))?Number(v.targetRir):2,extraRestDays:[0,1,2,3].includes(Number(v?.extraRestDays))?Number(v.extraRestDays):0});
 export const exportBackupObject=(state,includeDNAMarkers=false)=>{const {dnaMarkers:storedMarkers,...safeState}=state;return {...safeState,...(includeDNAMarkers?{dnaMarkers:normalizeDNAMarkers(storedMarkers)}:{}),profileSnapshot:{heightCm:Number(state.profile.height),weightKg:Number(state.profile.weight),ageYears:state.profile.age===''?null:Number(state.profile.age)},exportedAt:new Date().toISOString(),app:'MuscleAtlasPro'};};
-export const emptyState=()=>({schemaVersion:VERSION,profile:defaultProfile(),profileHistory:[],logs:[],weights:[],meals:[],personalFoods:[],caloriePlan:defaultCaloriePlan(),forecastPlan:defaultForecastPlan(),evaluationLevel:'normal',trainingPrefs:{targetRir:2,extraRestDays:0},dnaMarkers:emptyDNAMarkers(),excludedMuscles:[],vitals:[],pfcGoal:pfcForPreset('balanced'),pfcPreset:'balanced',updatedAt:new Date().toISOString()});
-const alias=E.flatMap(e=>[e.n,...e.a].map(a=>({e,a:a.normalize('NFKC').toLowerCase()}))).sort((a,b)=>b.a.length-a.a.length);
+export const emptyState=()=>({schemaVersion:VERSION,profile:defaultProfile(),profileHistory:[],logs:[],weights:[],meals:[],personalFoods:[],caloriePlan:defaultCaloriePlan(),forecastPlan:defaultForecastPlan(),evaluationLevel:'normal',trainingPrefs:{targetRir:2,extraRestDays:0},dnaMarkers:emptyDNAMarkers(),excludedMuscles:[],vitals:[],pfcGoal:pfcForPreset('balanced'),pfcPreset:'balanced',uiLanguage:'ja',updatedAt:new Date().toISOString()});
+const alias=E.flatMap(e=>localizedExerciseAliases(e).map(a=>({e,a:a.normalize('NFKC').toLowerCase()}))).sort((a,b)=>b.a.length-a.a.length);
 // Keep the one-letter suffixes strict: 'k' must not match 'km' or 'kcal',
 // 'r' must not match 'rir', and 's' must not match arbitrary English words.
 const WEIGHT_UNIT=String.raw`(?:kg|キロ|k(?![a-z]))`;
-const REP_UNIT=String.raw`(?:reps?|r(?![a-z])|回(?:数)?)`;
-const SET_UNIT=String.raw`(?:sets?|s(?![a-z])|セット)`;
+const REP_UNIT=String.raw`(?:repeticiones|répétitions|rép|ripetizioni|rip|wdh\.?|reps?|r(?![a-z])|回(?:数)?)`;
+const SET_UNIT=String.raw`(?:séries?|series?|sätze|satz|sets?|s(?![a-z])|セット)`;
 const WEIGHT_RE=new RegExp(String.raw`(\d+(?:\.\d+)?)\s*${WEIGHT_UNIT}`,'gi');
 const REP_SET_RE=new RegExp(String.raw`(\d+)\s*${REP_UNIT}(?:\s*[x×*]?\s*(\d+)\s*${SET_UNIT})?`,'gi');
 const NEXT_UNIT_RE=new RegExp(String.raw`\d+(?:\.\d+)?\s*(?:${WEIGHT_UNIT}|${REP_UNIT}|${SET_UNIT}|km|分|傾斜|度|%)`,'i');
-const cardioCatalog=[{name:'トレッドミル',alias:['トレッドミル','treadmill'],met:null},{name:'エアロバイク',alias:['エアロバイク','stationary bike','フィットネスバイク'],met:5.8},{name:'ウォーキング',alias:['ウォーキング','walking','早歩き'],met:3.5},{name:'ランニング',alias:['ランニング','running','ジョギング'],met:7},{name:'ローイングマシン',alias:['ローイングマシン'],met:5.0},{name:'有酸素運動',alias:['有酸素運動','cardio'],met:5.0}];
+const cardioCatalog=[{name:'トレッドミル',alias:['トレッドミル','treadmill','tapis roulant','cinta de correr','cinta de correr','laufband'],met:null},{name:'エアロバイク',alias:['エアロバイク','stationary bike','フィットネスバイク','vélo stationnaire','cyclette','bicicleta estática','fahrradergometer'],met:5.8},{name:'ウォーキング',alias:['ウォーキング','walking','早歩き','marche','camminata','caminata','gehen'],met:3.5},{name:'ランニング',alias:['ランニング','running','ジョギング','course à pied','corsa','correr','laufen'],met:7},{name:'ローイングマシン',alias:['ローイングマシン'],met:5.0},{name:'有酸素運動',alias:['有酸素運動','cardio'],met:5.0}];
 export const exerciseCatalog=E.map(x=>({name:x.n,primary:x.p,secondary:x.s}));
 export const safeText=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export const localToday=(d=new Date())=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -115,7 +116,7 @@ export const normalizeState=(data)=>{
  const fp=data.forecastPlan||{}, rawIntake=fp.dailyIntake, rawRate=Number(fp.strengthMonthlyPct);
  const forecastPlan={dailyIntake:rawIntake===''||rawIntake==null?'':Number.isFinite(Number(rawIntake))&&Number(rawIntake)>=1000&&Number(rawIntake)<=6000?Number(rawIntake):'',
  strengthMode:['trend','flat','manual'].includes(fp.strengthMode)?fp.strengthMode:'trend',strengthMonthlyPct:Number.isFinite(rawRate)&&rawRate>=-5&&rawRate<=5?rawRate:0,exercise:String(fp.exercise||'').slice(0,180)};
- return {schemaVersion:VERSION,profile:{...defaultProfile(),...Object.fromEntries(Object.entries(data.profile).filter(([k])=>k in defaultProfile()))},profileHistory:Array.isArray(data.profileHistory)?data.profileHistory.filter(h=>h&&/^\d{4}-\d{2}-\d{2}$/.test(h.date)&&h.profile&&typeof h.profile==='object').slice(-30000).map(h=>({date:h.date,profile:{...defaultProfile(),...Object.fromEntries(Object.entries(h.profile).filter(([k])=>k in defaultProfile()))}})):[],logs,weights:Array.isArray(data.weights)?data.weights.slice(-30000):[],meals,personalFoods:normalizePersonalFoods(data.personalFoods),vitals,pfcGoal,pfcPreset,caloriePlan:plan,forecastPlan,evaluationLevel:Object.hasOwn(EVALUATION_LEVELS,data.evaluationLevel)?data.evaluationLevel:'normal',trainingPrefs:normalizeTrainingPrefs(data.trainingPrefs),dnaMarkers:normalizeDNAMarkers(data.dnaMarkers),excludedMuscles:Array.isArray(data.excludedMuscles)?[...new Set(data.excludedMuscles.filter(id=>typeof id==='string'&&(id in names||id in DETAIL_IDS)))].slice(0,100):[],updatedAt:new Date().toISOString()};
+ return {schemaVersion:VERSION,profile:{...defaultProfile(),...Object.fromEntries(Object.entries(data.profile).filter(([k])=>k in defaultProfile()))},profileHistory:Array.isArray(data.profileHistory)?data.profileHistory.filter(h=>h&&/^\d{4}-\d{2}-\d{2}$/.test(h.date)&&h.profile&&typeof h.profile==='object').slice(-30000).map(h=>({date:h.date,profile:{...defaultProfile(),...Object.fromEntries(Object.entries(h.profile).filter(([k])=>k in defaultProfile()))}})):[],logs,weights:Array.isArray(data.weights)?data.weights.slice(-30000):[],meals,personalFoods:normalizePersonalFoods(data.personalFoods),vitals,pfcGoal,pfcPreset,uiLanguage:['ja','en','fr','it','es','de'].includes(data.uiLanguage)?data.uiLanguage:'ja',caloriePlan:plan,forecastPlan,evaluationLevel:Object.hasOwn(EVALUATION_LEVELS,data.evaluationLevel)?data.evaluationLevel:'normal',trainingPrefs:normalizeTrainingPrefs(data.trainingPrefs),dnaMarkers:normalizeDNAMarkers(data.dnaMarkers),excludedMuscles:Array.isArray(data.excludedMuscles)?[...new Set(data.excludedMuscles.filter(id=>typeof id==='string'&&(id in names||id in DETAIL_IDS)))].slice(0,100):[],updatedAt:new Date().toISOString()};
 };
 /** Merge backups from prior builds without repeating any date already recorded on this device.
  * Existing profile and records take priority; preserve multi-session days from incoming when the date is new.
@@ -132,7 +133,7 @@ export function mergeMissingDays(current,incoming){
  const freshMeals=addition.meals.filter(m=>!mealKeys.has(m.id));
  const dictMerge=mergePersonalFoods(base.personalFoods,addition.personalFoods);
  const vitalKeys=new Set(base.vitals.map(v=>v.id));const freshVitals=addition.vitals.filter(v=>!vitalKeys.has(v.id));
- return {state:normalizeState({...base,logs:[...base.logs,...fresh],profile:profileIsSet?base.profile:addition.profile,weights:[...base.weights,...addition.weights.filter(w=>!weightKeys.has(w.date))],profileHistory:[...base.profileHistory,...addition.profileHistory.filter(h=>!base.profileHistory.some(x=>x.date===h.date))],meals:[...base.meals,...freshMeals],personalFoods:dictMerge.foods,vitals:[...base.vitals,...freshVitals],pfcGoal:base.pfcGoal,pfcPreset:base.pfcPreset,caloriePlan:base.caloriePlan,evaluationLevel:base.evaluationLevel,trainingPrefs:base.trainingPrefs,dnaMarkers:Object.values(base.dnaMarkers).some(Boolean)?base.dnaMarkers:addition.dnaMarkers}),added:fresh.length,skipped: addition.logs.length-fresh.length,mealsAdded:freshMeals.length,personalFoodsAdded:dictMerge.added,vitalsAdded:freshVitals.length};
+ return {state:normalizeState({...base,logs:[...base.logs,...fresh],profile:profileIsSet?base.profile:addition.profile,weights:[...base.weights,...addition.weights.filter(w=>!weightKeys.has(w.date))],profileHistory:[...base.profileHistory,...addition.profileHistory.filter(h=>!base.profileHistory.some(x=>x.date===h.date))],meals:[...base.meals,...freshMeals],personalFoods:dictMerge.foods,vitals:[...base.vitals,...freshVitals],pfcGoal:base.pfcGoal,pfcPreset:base.pfcPreset,uiLanguage:base.uiLanguage,caloriePlan:base.caloriePlan,evaluationLevel:base.evaluationLevel,trainingPrefs:base.trainingPrefs,dnaMarkers:Object.values(base.dnaMarkers).some(Boolean)?base.dnaMarkers:addition.dnaMarkers}),added:fresh.length,skipped: addition.logs.length-fresh.length,mealsAdded:freshMeals.length,personalFoodsAdded:dictMerge.added,vitalsAdded:freshVitals.length};
 }
 export function validateProfile(p){const h=Number(p.height),w=Number(p.weight),age=Number(p.age);if(!Number.isFinite(h)||h<90||h>240)throw Error('身長は90〜240cmで入力してください');if(!Number.isFinite(w)||w<25||w>350)throw Error('体重は25〜350kgで入力してください');if(p.age!==''&&(!Number.isInteger(age)||age<1||age>120))throw Error('年齢を確認してください');if(p.fat!==''&&(n(p.fat)<1||n(p.fat)>70))throw Error('体脂肪率を確認してください');return true;}
 export function setsOf(log){return (log?.exercises||[]).reduce((a,e)=>a+(e.groups||[]).reduce((n,g)=>n+nSafe(g.sets),0),0)}

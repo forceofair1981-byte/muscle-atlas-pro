@@ -1,3 +1,4 @@
+import {localizedExerciseAliases,exerciseLabel} from './i18n.js';
 import {E,names} from './catalog.js';
 
 export const EXERCISE_GROUPS=[
@@ -21,8 +22,8 @@ export const exerciseSearchNormalize=text=>String(text||'').normalize('NFKC').to
 const index=E.map((exercise,i)=>({
  i,
  exercise,
- aliases:[exercise.n,...exercise.a].map(exerciseSearchNormalize),
- haystack:exerciseSearchNormalize([exercise.n,...exercise.a,...exercise.p.map(id=>names[id]),...exercise.s.map(id=>names[id])].join(' '))
+ aliases:localizedExerciseAliases(exercise).map(exerciseSearchNormalize),
+ haystack:exerciseSearchNormalize([...localizedExerciseAliases(exercise),...exercise.p.map(id=>names[id]),...exercise.s.map(id=>names[id])].join(' '))
 }));
 export function searchExerciseDictionary(query='',group='all'){
  const q=exerciseSearchNormalize(query);

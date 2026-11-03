@@ -260,3 +260,12 @@ details[open]>summary .fold-chevron{transform:rotate(180deg)}
 .exercise-lookup-item .btn{font-size:11px;padding:8px 9px;white-space:nowrap;flex-shrink:0}
 .exercise-more{display:block;margin:10px auto}
 @media(max-width:390px){.exercise-lookup-controls{grid-template-columns:1fr}.exercise-lookup-item{gap:5px}}
+
+/* v3.6.8 multilingual preference accessible on desktop and mobile */
+.language-panel{margin-bottom:15px;border-color:#427993;background:linear-gradient(120deg,#14283e,#0b1a2c)}
+.language-panel .setting-field{display:flex;flex-direction:column;gap:8px;max-width:480px;margin:10px 0}
+.language-panel select{min-height:46px;font-size:15px;width:100%}
+html[lang="de"] .page-heading,html[lang="fr"] .page-heading{overflow-wrap:anywhere}
+html:not([lang="ja"]) .navlink{font-size:13px;line-height:1.5}
+html:not([lang="ja"]) .metric small{line-height:1.55;min-height:2.6em}
+@media(max-width:720px){.language-panel{margin:9px 0 15px}.language-panel .section-head{flex-wrap:wrap}}
