@@ -669,7 +669,7 @@ function bind(){for(const selectId of ['detail-muscle-select','recovery-detail-m
  });
  $('log-text').addEventListener('input',invalidateTrainingAnalysis);
  renderExerciseLookup();
- $('insert-example').addEventListener('click',()=>{invalidateTrainingAnalysis();$('log-text').value='ベンチプレス 60kg10rep1set 80kg8rep1set 90kg6rep2set 80kg8rep\nケーブルクランチ 70kg50rep1set30rep1set\nトレーニング時間90分\nセット間2分\nトレッドミル 15%傾斜2.0km (6.0km/h)';toast('入力例をセットしました')});
+ $('insert-example').addEventListener('click',()=>{invalidateTrainingAnalysis();$('log-text').value='ベンチプレス 60k10r1s 80k8r1s 90k6r2s 80k8r\nケーブルクランチ 70kg50rep1set30rep1set\nトレーニング時間90分\nセット間2分\nトレッドミル 15%傾斜2.0km (6.0km/h)';toast('入力例をセットしました')});
  $('analyze-btn').addEventListener('click',analyze);$('save-session').addEventListener('click',commit);$('cancel-edit').addEventListener('click',()=>{resetForm();toast('編集を中止しました')});
  $('preview-exercises').addEventListener('input',e=>{const t=e.target;if(!t.dataset.field||!pending)return;const g=pending.exercises[Number(t.dataset.ex)]?.groups[Number(t.dataset.group)];if(!g)return;g[t.dataset.field]=t.value===''&&(t.dataset.field==='weight'||t.dataset.field==='rir')?null:Number(t.value);});
  $('preview-exercises').addEventListener('click',e=>{let t=e.target;if(!pending)return;if(t.dataset.removeEx!==undefined){pending.exercises.splice(Number(t.dataset.removeEx),1);renderPreview()}else if(t.dataset.removeGroup!==undefined){const [i,j]=t.dataset.removeGroup.split(':').map(Number);pending.exercises[i].groups.splice(j,1);renderPreview()}else if(t.dataset.addGroup!==undefined){const e=pending.exercises[Number(t.dataset.addGroup)],last=e.groups[e.groups.length-1]||{weight:null,reps:10,sets:1,rir:null};e.groups.push({...last,sets:1});renderPreview()}});

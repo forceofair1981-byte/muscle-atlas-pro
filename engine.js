@@ -15,6 +15,14 @@ export const normalizeTrainingPrefs=v=>({targetRir:[1,2,3,4,5].includes(Number(v
 export const exportBackupObject=(state,includeDNAMarkers=false)=>{const {dnaMarkers:storedMarkers,...safeState}=state;return {...safeState,...(includeDNAMarkers?{dnaMarkers:normalizeDNAMarkers(storedMarkers)}:{}),profileSnapshot:{heightCm:Number(state.profile.height),weightKg:Number(state.profile.weight),ageYears:state.profile.age===''?null:Number(state.profile.age)},exportedAt:new Date().toISOString(),app:'MuscleAtlasPro'};};
 export const emptyState=()=>({schemaVersion:VERSION,profile:defaultProfile(),profileHistory:[],logs:[],weights:[],meals:[],personalFoods:[],caloriePlan:defaultCaloriePlan(),forecastPlan:defaultForecastPlan(),evaluationLevel:'normal',trainingPrefs:{targetRir:2,extraRestDays:0},dnaMarkers:emptyDNAMarkers(),excludedMuscles:[],vitals:[],pfcGoal:pfcForPreset('balanced'),pfcPreset:'balanced',updatedAt:new Date().toISOString()});
 const alias=E.flatMap(e=>[e.n,...e.a].map(a=>({e,a:a.normalize('NFKC').toLowerCase()}))).sort((a,b)=>b.a.length-a.a.length);
+// Keep the one-letter suffixes strict: 'k' must not match 'km' or 'kcal',
+// 'r' must not match 'rir', and 's' must not match arbitrary English words.
+const WEIGHT_UNIT=String.raw`(?:kg|キロ|k(?![a-z]))`;
+const REP_UNIT=String.raw`(?:reps?|r(?![a-z])|回(?:数)?)`;
+const SET_UNIT=String.raw`(?:sets?|s(?![a-z])|セット)`;
+const WEIGHT_RE=new RegExp(String.raw`(\d+(?:\.\d+)?)\s*${WEIGHT_UNIT}`,'gi');
+const REP_SET_RE=new RegExp(String.raw`(\d+)\s*${REP_UNIT}(?:\s*[x×*]?\s*(\d+)\s*${SET_UNIT})?`,'gi');
+const NEXT_UNIT_RE=new RegExp(String.raw`\d+(?:\.\d+)?\s*(?:${WEIGHT_UNIT}|${REP_UNIT}|${SET_UNIT}|km|分|傾斜|度|%)`,'i');
 const cardioCatalog=[{name:'トレッドミル',alias:['トレッドミル','treadmill'],met:null},{name:'エアロバイク',alias:['エアロバイク','stationary bike','フィットネスバイク'],met:5.8},{name:'ウォーキング',alias:['ウォーキング','walking','早歩き'],met:3.5},{name:'ランニング',alias:['ランニング','running','ジョギング'],met:7},{name:'ローイングマシン',alias:['ローイングマシン'],met:5.0},{name:'有酸素運動',alias:['有酸素運動','cardio'],met:5.0}];
 export const exerciseCatalog=E.map(x=>({name:x.n,primary:x.p,secondary:x.s}));
 export const safeText=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -37,7 +45,7 @@ export const parseTraining=(text)=>{
   const cardioMatch=exerciseMatch?null:cardioCatalog.find(c=>c.alias.some(a=>norm.includes(a)));
   const match=exerciseMatch||cardioMatch;
   const nxt=lines[i+1]||'';
-  if(match&&/^\d+(?:\.\d+)?/.test(clean(nxt))&&/(?:kg|キロ|rep|回|set|セット|km|分|傾斜|度|%)/i.test(clean(nxt))){chunks.push(raw+' '+nxt);i++}else chunks.push(raw);
+  if(match&&/^\d+(?:\.\d+)?/.test(clean(nxt))&&NEXT_UNIT_RE.test(clean(nxt))){chunks.push(raw+' '+nxt);i++}else chunks.push(raw);
  }
  const exercises=[],cardio=[],unmatched=[];
  for(const raw of chunks){
@@ -61,12 +69,12 @@ export const parseTraining=(text)=>{
   }
   const e=exAlias?.e||alias.find(x=>line.includes(x.a))?.e;
   if(!e){unmatched.push({raw,reason:'種目名を識別できません'});continue}
-  const wt=[...line.matchAll(/(\d+(?:\.\d+)?)\s*(?:kg|キロ)/gi)];
+  const wt=[...line.matchAll(WEIGHT_RE)];
   const portions=wt.length?wt.map((w,i)=>({weight:n(w[1]),text:line.slice(w.index+w[0].length,i+1<wt.length?wt[i+1].index:line.length)})):[{weight:null,text:line}];
   const groups=[];
   for(const part of portions){
    let matched=false;
-   for(const v of part.text.matchAll(/(\d+)\s*(?:reps?|回)(?:\s*[x×*]?\s*(\d+)\s*(?:sets?|セット))?/gi)){
+   for(const v of part.text.matchAll(REP_SET_RE)){
     groups.push({weight:part.weight,reps:n(v[1]),sets:v[2]?n(v[2]):1,impliedSet:!v[2],rir:null});matched=true;
    }
    if(!matched){const z=part.text.match(/(\d+)\s*[x×*]\s*(\d+)\s*(?:sets?|セット)?/i);if(z)groups.push({weight:part.weight,reps:n(z[1]),sets:n(z[2]),impliedSet:false,rir:null})}
@@ -75,7 +83,7 @@ export const parseTraining=(text)=>{
   const equipment=/ダンベル|dumbbell|db\s/.test(line)?'dumbbell':/バーベル|barbell/.test(line)?'barbell':null;
   const rir=(line.match(/rir\s*[:：]?\s*(\d+)/)||[])[1];
   if(rir!==undefined)groups.forEach(g=>g.rir=n(rir));
-  const displayName=raw.replace(/\s*\d+(?:\.\d+)?\s*(?:kg|キロ).*$/i,'').trim();
+  const displayName=raw.normalize('NFKC').replace(new RegExp(String.raw`\s*\d+(?:\.\d+)?\s*(?:${WEIGHT_UNIT}|${REP_UNIT}).*$`,'i'),'').trim();
   exercises.push({id:uid(),name:e.n,displayName,primary:[...e.p],secondary:[...e.s],equipment,groups,raw});
  }
  if(!exercises.length&&!cardio.length)warnings.push('認識できる記録がありません。');
