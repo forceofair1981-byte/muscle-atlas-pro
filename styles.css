@@ -269,3 +269,18 @@ html[lang="de"] .page-heading,html[lang="fr"] .page-heading{overflow-wrap:anywhe
 html:not([lang="ja"]) .navlink{font-size:13px;line-height:1.5}
 html:not([lang="ja"]) .metric small{line-height:1.55;min-height:2.6em}
 @media(max-width:720px){.language-panel{margin:9px 0 15px}.language-panel .section-head{flex-wrap:wrap}}
+
+/* v3.6.10: obvious signed rest-day controls, iPhone tap targets */
+.rest-stepper{margin:17px 0 8px;padding:16px;border:1px solid #407091;border-radius:14px;background:#102b40}
+.rest-stepper-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.rest-stepper-heading strong{color:#d9f2ff;font-size:14px}
+#rest-offset-value{display:inline-block;min-width:100px;text-align:center;color:#81edcd;background:#183d50;border:1px solid #518e93;border-radius:12px;padding:8px 12px;font-size:24px;font-weight:850;font-variant-numeric:tabular-nums}
+.rest-stepper-actions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.rest-stepper-actions .btn{font-size:22px;min-height:53px;padding:12px 6px;touch-action:manipulation}
+.rest-stepper-actions #rest-minus{border-color:#78b2e3;color:#c7e5ff}
+.rest-stepper-actions #rest-plus{border-color:#67bea9;color:#acf4da}
+#rest-stepper-status{margin:14px 0 4px;color:#b5d8e9;font-size:12px;font-weight:650;line-height:1.5}
+.rest-stepper[data-status="saved"] #rest-stepper-status{color:#8ff0c7}
+.rest-stepper[data-status="failed"] #rest-stepper-status{color:#ffb6ba}
+.rest-stepper>.fine{margin:5px 0 0}
+@media(max-width:390px){.rest-stepper{padding:12px}.rest-stepper-actions{gap:6px}}

@@ -1,5 +1,11 @@
 // Offline UI translations. Static UI strings only; never send personal data to a translator.
 export const L10N = {
+"回復日数の増減設定": {"en": "Change recovery days", "fr": "Ajuster les jours de récupération", "it": "Regola i giorni di recupero", "es": "Ajustar días de recuperación", "de": "Erholungstage einstellen"},
+"回復日数を増減する": {"en": "Decrease / increase recovery days", "fr": "Réduire / augmenter les jours de récupération", "it": "Riduci / aumenta i giorni di recupero", "es": "Reducir / aumentar días de recuperación", "de": "Erholungstage verringern / erhöhen"},
+"回復推定日数を1日減らす": {"en": "Reduce estimated recovery by 1 day", "fr": "Réduire la récupération estimée d’un jour", "it": "Riduci il recupero stimato di 1 giorno", "es": "Reducir la recuperación estimada en 1 día", "de": "Geschätzte Erholung um 1 Tag verkürzen"},
+"回復推定日数を0日に戻す": {"en": "Reset adjustment to 0 days", "fr": "Réinitialiser l’ajustement à 0 jour", "it": "Reimposta la modifica a 0 giorni", "es": "Restablecer el ajuste a 0 días", "de": "Anpassung auf 0 Tage setzen"},
+"回復推定日数を1日増やす": {"en": "Increase estimated recovery by 1 day", "fr": "Augmenter la récupération estimée d’un jour", "it": "Aumenta il recupero stimato di 1 giorno", "es": "Aumentar la recuperación estimada en 1 día", "de": "Geschätzte Erholung um 1 Tag verlängern"},
+"−・＋ボタンは押すと自動保存されます。プルダウンを使う場合は「負荷・回復設定を保存」を押してください。": {"en": "Minus and plus buttons save automatically. When using the dropdown, tap Save load and recovery settings.", "fr": "Les boutons − et + enregistrent automatiquement. Pour le menu déroulant, appuyez sur Enregistrer les réglages.", "it": "I pulsanti − e + salvano automaticamente. Con il menu a discesa, premi Salva impostazioni.", "es": "Los botones − y + guardan automáticamente. Con el menú desplegable, pulsa Guardar ajustes.", "de": "Minus- und Plustasten speichern automatisch. Beim Auswahlmenü bitte Einstellungen speichern."},
 "回復推定の休養日数調整": {"en":"Estimated recovery day adjustment","fr":"Ajustement des jours de récupération estimés","it":"Regolazione dei giorni di recupero stimati","es":"Ajuste de días estimados de recuperación","de":"Anpassung der geschätzten Erholungstage"},
 "調整なし": {"en":"No adjustment","fr":"Aucun ajustement","it":"Nessuna modifica","es":"Sin ajustes","de":"Keine Anpassung"},
 "−3日": {"en":"−3 days","fr":"−3 jours","it":"−3 giorni","es":"−3 días","de":"−3 Tage"},

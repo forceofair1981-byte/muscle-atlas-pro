@@ -443,7 +443,31 @@ async function deleteMeal(id){
  try{await save()}catch(e){state.meals=old;throw e}
  if(editingMealId===id)closeMealEditor();renderNutrition();renderDashboardEnergy();toast('食事記録を削除しました');
 }
-function renderSettings(){$('app-language').value=state.uiLanguage||'ja';for(const k of ['height','weight','age','sex','fat','muscle','goal','level','display'])$('p-'+k).value=state.profile[k]??'';$('evaluation-level').value=state.evaluationLevel||'normal';$('train-target-rir').value=String(state.trainingPrefs?.targetRir||2);$('train-extra-rest').value=String(state.trainingPrefs?.extraRestDays||0);renderExclusions();renderDNASettings();$('storage-message').textContent='保存方式：'+storageMode()+'。トレーニング・食事は端末ごとに保存。バックアップは暗号化されません。';}
+const REST_ADJUST_WORDS={
+ ja:{unit:'日',saved:'保存済み',pending:'未保存（保存ボタンを押してください）',saving:'保存中…',failed:'保存できませんでした'},
+ en:{unit:'days',saved:'Saved',pending:'Not saved (tap Save)',saving:'Saving…',failed:'Could not save'},
+ fr:{unit:'jours',saved:'Enregistré',pending:'Non enregistré (appuyez sur Enregistrer)',saving:'Enregistrement…',failed:'Échec de l’enregistrement'},
+ it:{unit:'giorni',saved:'Salvato',pending:'Non salvato (premi Salva)',saving:'Salvataggio…',failed:'Impossibile salvare'},
+ es:{unit:'días',saved:'Guardado',pending:'Sin guardar (pulsa Guardar)',saving:'Guardando…',failed:'No se pudo guardar'},
+ de:{unit:'Tage',saved:'Gespeichert',pending:'Nicht gespeichert (Speichern drücken)',saving:'Wird gespeichert…',failed:'Speichern fehlgeschlagen'}
+};
+function restDaysText(days){const n=Number(days);return (n>0?'+':n<0?'−':'')+Math.abs(n)+' '+(REST_ADJUST_WORDS[getLanguage()]||REST_ADJUST_WORDS.ja).unit;}
+function renderRestStepper(status='saved'){
+ const n=Number($('train-extra-rest').value)||0,dict=REST_ADJUST_WORDS[getLanguage()]||REST_ADJUST_WORDS.ja;
+ $('rest-offset-value').textContent=restDaysText(n);
+ $('rest-offset-value').dataset.days=String(n);
+ $('rest-stepper-status').textContent=dict[status]+'：'+restDaysText(n);
+ $('rest-minus').disabled=n<=-3||status==='saving';$('rest-plus').disabled=n>=3||status==='saving';$('rest-reset').disabled=n===0||status==='saving';
+ $('rest-stepper').dataset.status=status;
+}
+async function adjustRestDays(delta){
+ if($('rest-stepper').dataset.status==='saving')return;
+ const select=$('train-extra-rest'),before=Number(select.value)||0,next=Math.max(-3,Math.min(3,delta===null?0:before+delta));
+ if(next===before)return;
+ select.value=String(next);
+ await saveTrainingPrefs();
+}
+function renderSettings(){$('app-language').value=state.uiLanguage||'ja';for(const k of ['height','weight','age','sex','fat','muscle','goal','level','display'])$('p-'+k).value=state.profile[k]??'';$('evaluation-level').value=state.evaluationLevel||'normal';$('train-target-rir').value=String(state.trainingPrefs?.targetRir||2);$('train-extra-rest').value=String(state.trainingPrefs?.extraRestDays??0);renderRestStepper('saved');renderExclusions();renderDNASettings();$('storage-message').textContent='保存方式：'+storageMode()+'。トレーニング・食事は端末ごとに保存。バックアップは暗号化されません。';}
 async function saveProfile(){const p={};for(const k of ['height','weight','age','sex','fat','muscle','goal','level','display'])p[k]=val('p-'+k);try{validateProfile(p);if(Number(state.profile.weight)!==Number(p.weight)){state.weights=state.weights||[];const d=localToday();const record={date:d,weight:Number(p.weight),savedAt:new Date().toISOString()};state.weights=state.weights.filter(x=>x.date!==d).concat(record);}state.profile=p;state.profileHistory=state.profileHistory||[];
  const effectiveDate=localToday();state.profileHistory=state.profileHistory.filter(x=>x.date!==effectiveDate).concat({date:effectiveDate,profile:{...p}});
  await save();renderDashboard();if(activeRoute==='nutrition')renderNutrition();toast('プロフィールを保存しました');}catch(e){toast(e.message)}}
@@ -451,8 +475,22 @@ function download(name,content,mime){const url=URL.createObjectURL(new Blob([con
 function exportJSON(){download('MuscleAtlasPro_Backup_'+localToday()+'.json',JSON.stringify(exportBackupObject(state,$('export-include-dna').checked),null,2),'application/json');toast($('export-include-dna').checked?'DNA遺伝子型を含むJSONを作成しました':'DNA遺伝子型を含まないJSONを作成しました');}
 async function saveTrainingPrefs(){
  const prior=state.trainingPrefs;
- state.trainingPrefs=normalizeTrainingPrefs({targetRir:val('train-target-rir'),extraRestDays:val('train-extra-rest')});
- try{await save();renderDashboard();renderRecovery();renderTomorrow();toast('負荷と回復の設定を保存しました');}catch(e){state.trainingPrefs=prior;toast('設定を保存できません：'+e.message);}
+ const pendingPrefs=normalizeTrainingPrefs({targetRir:val('train-target-rir'),extraRestDays:val('train-extra-rest')});
+ if($('rest-stepper').dataset.status==='saving')return;
+ renderRestStepper('saving');
+ $('save-training-preferences').disabled=true;
+ try{
+  state.trainingPrefs=pendingPrefs;
+  await save();
+  renderDashboard();renderRecovery();renderTomorrow();
+  renderRestStepper('saved');
+  toast('負荷と回復の設定を保存しました');
+ }catch(e){
+  state.trainingPrefs=prior;
+  $('train-extra-rest').value=String(prior?.extraRestDays??0);
+  renderRestStepper('failed');
+  toast('設定を保存できません：'+e.message);
+ }finally{$('save-training-preferences').disabled=false;}
 }
 function renderDNASettings(){
  const markers=normalizeDNAMarkers(state.dnaMarkers);
@@ -662,7 +700,11 @@ function bind(){$('app-language').addEventListener('change',chooseLanguage);for(
  $('exclusion-toggle').addEventListener('click',()=>setExclusionsExpanded($('exclusion-toggle').getAttribute('aria-expanded')!=='true'));
   document.querySelector('[data-open-exclusions]')?.addEventListener('click',()=>setExclusionsExpanded(true));
   $('exclusion-list').addEventListener('change',()=>{const n=$('exclusion-list').querySelectorAll('input[data-exclude]:checked').length;$('exclusion-count').textContent=`${n}部位を選択（未保存）`;});
-  $('tomorrow-base-date').addEventListener('change',renderTomorrow);$('save-excluded-muscles').addEventListener('click',saveExclusions);$('recovery-date').addEventListener('change',renderRecovery);$('evaluation-day').addEventListener('change',renderDailyEvaluation);$('save-evaluation-level').addEventListener('click',saveEvaluationLevel);$('save-training-preferences').addEventListener('click',saveTrainingPrefs);$('dna-file').addEventListener('change',e=>loadDNAFile(e.target.files[0]));$('dna-save').addEventListener('click',saveDNAMarkers);$('dna-clear').addEventListener('click',clearDNAMarkers);$('dna-parse-report').addEventListener('click',parseDNAReportText);
+  $('tomorrow-base-date').addEventListener('change',renderTomorrow);$('save-excluded-muscles').addEventListener('click',saveExclusions);$('recovery-date').addEventListener('change',renderRecovery);$('evaluation-day').addEventListener('change',renderDailyEvaluation);$('save-evaluation-level').addEventListener('click',saveEvaluationLevel);$('save-training-preferences').addEventListener('click',saveTrainingPrefs);
+ $('train-extra-rest').addEventListener('change',()=>renderRestStepper('pending'));
+ $('rest-minus').addEventListener('click',()=>adjustRestDays(-1));
+ $('rest-plus').addEventListener('click',()=>adjustRestDays(1));
+ $('rest-reset').addEventListener('click',()=>adjustRestDays(null));$('dna-file').addEventListener('change',e=>loadDNAFile(e.target.files[0]));$('dna-save').addEventListener('click',saveDNAMarkers);$('dna-clear').addEventListener('click',clearDNAMarkers);$('dna-parse-report').addEventListener('click',parseDNAReportText);
  $('recovery-side').addEventListener('change',()=>{const v=val('recovery-side');$('recovery-body-grid').className='body-grid'+(v==='both'?'':' single '+v)});
  for(const id of ['recovery-front','recovery-back']){
   $(id).addEventListener('click',e=>{const node=e.target.closest('[data-muscle]');if(!node)return;selectedRecoveryMuscle=node.dataset.muscle;renderRecovery()});
