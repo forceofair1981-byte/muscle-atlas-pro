@@ -1,5 +1,17 @@
 // Offline UI translations. Static UI strings only; never send personal data to a translator.
 export const L10N = {
+"回復推定の休養日数調整": {"en":"Estimated recovery day adjustment","fr":"Ajustement des jours de récupération estimés","it":"Regolazione dei giorni di recupero stimati","es":"Ajuste de días estimados de recuperación","de":"Anpassung der geschätzten Erholungstage"},
+"調整なし": {"en":"No adjustment","fr":"Aucun ajustement","it":"Nessuna modifica","es":"Sin ajustes","de":"Keine Anpassung"},
+"−3日": {"en":"−3 days","fr":"−3 jours","it":"−3 giorni","es":"−3 días","de":"−3 Tage"},
+"−2日": {"en":"−2 days","fr":"−2 jours","it":"−2 giorni","es":"−2 días","de":"−2 Tage"},
+"−1日": {"en":"−1 day","fr":"−1 jour","it":"−1 giorno","es":"−1 día","de":"−1 Tag"},
+"RIRと休養日数（−3〜＋3日）は本人が設定する推定上の調整値です。マイナスでも推定休養日数は最低1日とし、記録上の回復色と今日の候補に反映します。医学的な回復判定や安全の保証ではありません。": {
+"en":"RIR and recovery days (−3 to +3) are user-defined estimates. Negative adjustments never reduce the estimated rest below 1 day. They affect recovery colors and today's recommendations; they do not establish medical recovery or safety.",
+"fr":"Le RIR et les jours de récupération (−3 à +3) sont des estimations choisies par l’utilisateur. Le repos estimé reste d’au moins 1 jour. Ces valeurs influencent les couleurs et recommandations, sans garantir la récupération ni la sécurité.",
+"it":"RIR e giorni di recupero (da −3 a +3) sono stime impostate dall’utente. Il riposo stimato non scende mai sotto 1 giorno. Influenzano colori e consigli, ma non garantiscono recupero o sicurezza.",
+"es":"El RIR y los días de recuperación (de −3 a +3) son estimaciones del usuario. El descanso estimado nunca baja de 1 día. Afectan a los colores y sugerencias, pero no garantizan recuperación ni seguridad.",
+"de":"RIR und Erholungstage (−3 bis +3) sind nutzerdefinierte Schätzwerte. Die geschätzte Ruhezeit beträgt mindestens 1 Tag. Sie beeinflussen Farben und Empfehlungen, sind aber keine medizinische Freigabe."},
+
 "Muscle Atlas Pro — トレーニングを可視化する": {
 "en": "Muscle Atlas Pro — Visualize your training",
 "fr": "Muscle Atlas Pro — Visualisez vos entraînements",

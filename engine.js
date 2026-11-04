@@ -12,7 +12,7 @@ export const defaultProfile=()=>({age:'30',height:'165',weight:'60',fat:'',muscl
 export const defaultCaloriePlan=()=>({activityFactor:1.2,goalAdjustment:-250,exerciseCredit:0.5});
 export const EVALUATION_LEVELS={gentle:'優しい',normal:'普通',strict:'厳しい'};
 export const defaultForecastPlan=()=>({dailyIntake:'',strengthMode:'trend',strengthMonthlyPct:0,exercise:''});
-export const normalizeTrainingPrefs=v=>({targetRir:[1,2,3,4,5].includes(Number(v?.targetRir))?Number(v.targetRir):2,extraRestDays:[0,1,2,3].includes(Number(v?.extraRestDays))?Number(v.extraRestDays):0});
+export const normalizeTrainingPrefs=v=>({targetRir:[1,2,3,4,5].includes(Number(v?.targetRir))?Number(v.targetRir):2,extraRestDays:[-3,-2,-1,0,1,2,3].includes(Number(v?.extraRestDays))?Number(v.extraRestDays):0});
 export const exportBackupObject=(state,includeDNAMarkers=false)=>{const {dnaMarkers:storedMarkers,...safeState}=state;return {...safeState,...(includeDNAMarkers?{dnaMarkers:normalizeDNAMarkers(storedMarkers)}:{}),profileSnapshot:{heightCm:Number(state.profile.height),weightKg:Number(state.profile.weight),ageYears:state.profile.age===''?null:Number(state.profile.age)},exportedAt:new Date().toISOString(),app:'MuscleAtlasPro'};};
 export const emptyState=()=>({schemaVersion:VERSION,profile:defaultProfile(),profileHistory:[],logs:[],weights:[],meals:[],personalFoods:[],caloriePlan:defaultCaloriePlan(),forecastPlan:defaultForecastPlan(),evaluationLevel:'normal',trainingPrefs:{targetRir:2,extraRestDays:0},dnaMarkers:emptyDNAMarkers(),excludedMuscles:[],vitals:[],pfcGoal:pfcForPreset('balanced'),pfcPreset:'balanced',uiLanguage:'ja',updatedAt:new Date().toISOString()});
 const alias=E.flatMap(e=>localizedExerciseAliases(e).map(a=>({e,a:a.normalize('NFKC').toLowerCase()}))).sort((a,b)=>b.a.length-a.a.length);
@@ -308,7 +308,10 @@ export function recoveryForecast(logs,asOf=localToday(),profile={},extraRestDays
  const items={};
  for(const id of Object.keys(names)){
   const exposures=[...grouped.entries()].filter(([,parts])=>parts.has(id)).map(([date,parts])=>{
-   const data=parts.get(id),requiredDays=estimateRestDays(data.sets,{nearFailure:data.nearFailure,vigorous:data.vigorous,level:profile.level})+([0,1,2,3].includes(Number(extraRestDays))?Number(extraRestDays):0);
+   const data=parts.get(id),baseDays=estimateRestDays(data.sets,{nearFailure:data.nearFailure,vigorous:data.vigorous,level:profile.level});
+   // User adjustment is a subjective estimate, not a physiological clearance.
+   // Keep at least one estimated calendar day for any recorded exposure.
+   const requiredDays=Math.max(1,baseDays+([-3,-2,-1,0,1,2,3].includes(Number(extraRestDays))?Number(extraRestDays):0));
    const elapsedDays=diffCalendarDays(asOf,date);
    return {date,effectiveSets:Math.round(data.sets*10)/10,requiredDays,elapsedDays,remainingDays:Math.max(0,requiredDays-elapsedDays)};
   }).sort((a,b)=>b.date.localeCompare(a.date));
